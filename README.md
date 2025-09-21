@@ -16,7 +16,20 @@ This repository contains tooling to generate subtle mutants of a Python class us
   - google-genai
   - python-dotenv
 
+## Setup
+
+Create and activate a virtual environment, then install the required packages:
+
+    python -m venv .venv
+    source .venv/bin/activate  # macOS/Linux
+    .\.venv\Scripts\activate  # Windows (PowerShell)
+
+Install the dependencies:
+
+    pip install -r requirements.txt
+
 ## Usage
+
 
 Run the main script with the target module and its existing tests:
 
