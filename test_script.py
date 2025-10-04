@@ -22,10 +22,7 @@ MODEL_PROVIDER = "google_genai"
 
 class ACHWithExactPrompts:
     def __init__(self):
-        """Initialize ACH with Gemini API"""
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("Please set GEMINI_API_KEY environment variable")
+        """Initialize ACH"""
         self.client = init_chat_model(
             model=MODEL, model_provider=MODEL_PROVIDER
         )
@@ -33,7 +30,7 @@ class ACHWithExactPrompts:
     def run_workflow(self, code_file: str, test_file: str, max_attempts: int = 5):
         """Run the ACH workflow with exact prompts from the paper"""
         print("Starting ACH Workflow with exact prompts from paper...")
-        print(f"Using model: gemini-2.5-flash")
+        print(f"Using model: {MODEL}")
         print(f"Processing files: {code_file}, {test_file}")
         
         # Read input files
@@ -146,7 +143,7 @@ version of that method that contains a typical bug that introduces a privacy vio
 all existing tests still pass. Do not completely remove functionality - introduce edge cases or partial failures. Delimit the mutated part using the
 comment-pair '# MUTANT START' and '# MUTANT END'"""
 
-        print("\n Sending prompt to Gemini (prompt length: {} chars)".format(len(prompt)))
+        print("\n Sending prompt to model (prompt length: {} chars)".format(len(prompt)))
         
         response = self.client.invoke(prompt)
         
