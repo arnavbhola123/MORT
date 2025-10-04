@@ -10,10 +10,15 @@ import subprocess
 import tempfile
 import os
 import sys
-from google import genai
 from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
 
 load_dotenv()
+
+# Constants
+
+MODEL = "gemini-2.5-flash"
+MODEL_PROVIDER = "google_genai"
 
 class ACHWithExactPrompts:
     def __init__(self):
@@ -21,8 +26,10 @@ class ACHWithExactPrompts:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("Please set GEMINI_API_KEY environment variable")
-        self.client = genai.Client(api_key=api_key)
-        
+        self.client = init_chat_model(
+            model=MODEL, model_provider=MODEL_PROVIDER
+        )
+
     def run_workflow(self, code_file: str, test_file: str, max_attempts: int = 5):
         """Run the ACH workflow with exact prompts from the paper"""
         print("Starting ACH Workflow with exact prompts from paper...")
@@ -141,12 +148,9 @@ comment-pair '# MUTANT START' and '# MUTANT END'"""
 
         print("\n Sending prompt to Gemini (prompt length: {} chars)".format(len(prompt)))
         
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        response = self.client.invoke(prompt)
         
-        text = response.text
+        text = response.content
         print(f" Received response (length: {len(text)} chars)")
         
         # Debug: show raw response structure
@@ -185,12 +189,9 @@ second version."""
         
         print(f"\n Checking equivalence (prompt length: {len(prompt)} chars)")
         
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        response = self.client.invoke(prompt)
         
-        answer = response.text.strip()
+        answer = response.content.strip()
         print(f" Equivalence check response: {answer[:100]}...")
         
         is_yes = answer.lower().startswith('yes')
@@ -209,12 +210,9 @@ will fail on the mutant version of the class, but would pass on the correct vers
 
         print(f"\n Generating test (prompt length: {len(prompt)} chars)")
         
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        response = self.client.invoke(prompt)
         
-        text = response.text
+        text = response.content
         print(f" Received test response (length: {len(text)} chars)")
         
         # Extract code from response
