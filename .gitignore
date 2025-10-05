@@ -1,6 +1,10 @@
-.venv
+.venv/
+venv/
 .env
 __pycache__/
-
-mutant_output.py
-test_output.py
+*.pyc
+outputs/*.py
+!outputs/.gitkeep
+*.py[cod]
+.pytest_cache/
+.DS_Store
