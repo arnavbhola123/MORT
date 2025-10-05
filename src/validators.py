@@ -10,31 +10,26 @@ import sys
 class CodeValidator:
     @staticmethod
     def is_syntactically_identical(original: str, mutated: str) -> bool:
-        """Check if code is syntactically identical after removing mutation markers"""
-        def clean(code):
-            # Remove both // and # style mutation markers and the mutated code between them
-            code = re.sub(r'(//|#)\s*MUTANT\s*START.*?(//|#)\s*MUTANT\s*END', '', code, flags=re.DOTALL)
-            # Also remove standalone markers
-            code = re.sub(r'(//|#)\s*MUTANT\s*(START|END).*\n', '', code)
-            try:
-                tree = ast.parse(code)
-                return ast.unparse(tree)
-            except Exception:
-                return code.strip()
+        """Table 2: Remove syntactically identical mutants (25%)"""
+        def normalize(code):
+            # Remove comments
+            code = re.sub(r'#.*$', '', code, flags=re.MULTILINE)
+            # Normalize whitespace
+            code = re.sub(r'\s+', ' ', code)
+            return code.strip()
         
-        original_clean = clean(original)
-        mutated_clean = clean(mutated)
+        return normalize(original) == normalize(mutated)
+    
+    @staticmethod
+    def only_comments_changed(original: str, mutated: str) -> bool:
+        """Table 5: Misleading comments (61% of equivalent mutants)"""
+        def remove_comments(code):
+            return re.sub(r'#.*$', '', code, flags=re.MULTILINE)
         
-        is_same = original_clean == mutated_clean
+        orig_no_comments = remove_comments(original)
+        mut_no_comments = remove_comments(mutated)
         
-        if is_same:
-            print("   Cleaned versions are identical")
-        else:
-            print("   Cleaned versions differ")
-            print(f"   Original (cleaned) length: {len(original_clean)}")
-            print(f"   Mutated (cleaned) length: {len(mutated_clean)}")
-            
-        return is_same
+        return orig_no_comments == mut_no_comments
     
     @staticmethod
     def validate_syntax(code: str) -> tuple:
@@ -43,49 +38,36 @@ class CodeValidator:
             ast.parse(code)
             return True, ""
         except SyntaxError as e:
-            return False, f"Syntax Error at line {e.lineno}: {e.text}"
+            return False, f"Syntax Error: {e}"
     
     @staticmethod
     def run_tests(mutated_code: str, test_code: str, 
                   code_filename: str, test_filename: str,
                   timeout: int = 20) -> tuple:
         """
-        Check if mutant builds and passes existing tests.
-
-        Saves files using the SAME BASENAMES as the originals so imports keep working.
-        Then runs: python -m unittest <test_module_basename> -v
+        Returns: (builds: bool, passes: bool)
         """
-        print("\n Validating mutant...")
-        
-        # Check syntax of the mutant first
+        # Syntax check first
         is_valid, error = CodeValidator.validate_syntax(mutated_code)
         if not is_valid:
-            print(f"    {error}")
+            print(f"    Syntax error: {error}")
             return False, False
-        print("   Mutant syntax is valid")
             
         with tempfile.TemporaryDirectory() as tmpdir:
-            print(f"   Created temp directory: {tmpdir}")
-
-            # Determine basenames and module name
             code_base = os.path.basename(code_filename)
             test_base = os.path.basename(test_filename)
             test_module = os.path.splitext(test_base)[0]
 
-            # Save mutated code under SAME name as provided code file
+            # Save files
             code_path = os.path.join(tmpdir, code_base)
-            with open(code_path, 'w', encoding='utf-8') as f:
+            with open(code_path, 'w') as f:
                 f.write(mutated_code)
-            print(f"    Saved mutant to {code_path}")
 
-            # Save tests under SAME name as provided test file
             test_path = os.path.join(tmpdir, test_base)
-            with open(test_path, 'w', encoding='utf-8') as f:
+            with open(test_path, 'w') as f:
                 f.write(test_code)
-            print(f"    Saved tests to {test_path}")
             
             # Run tests
-            print(f"   Running tests as module: {test_module}")
             try:
                 result = subprocess.run(
                     [sys.executable, "-m", "unittest", test_module, "-v"],
@@ -94,24 +76,12 @@ class CodeValidator:
                     cwd=tmpdir,
                     timeout=timeout
                 )
-                # Show a concise preview of output
-                out_preview = (result.stdout or "")[:800]
-                err_preview = (result.stderr or "")[:400]
-                print("   --- unittest STDOUT (truncated) ---")
-                print(out_preview)
-                if result.returncode != 0:
-                    print("   --- unittest STDERR (truncated) ---")
-                    print(err_preview)
-
-                if result.returncode == 0:
-                    print("   All tests pass")
-                else:
-                    print("    Some tests failed (return code {})".format(result.returncode))
-                    
-                return True, result.returncode == 0
+                
+                passed = result.returncode == 0
+                return True, passed
+                
             except subprocess.TimeoutExpired:
-                print("    Tests timed out")
                 return True, False
             except Exception as e:
-                print(f"    Error running tests: {e}")
+                print(f"    Error: {e}")
                 return True, False
