@@ -2,6 +2,13 @@
 """
 ACH (Automated Compliance Hardener) Implementation with Debug Output
 Using exact prompts from Table 1 of "Mutation-Guided LLM-based Test Generation at Meta"
+
+Dynamic filenames:
+    Usage: python ach_debug.py <CODE_FILE.py> <TEST_FILE.py>
+    - The mutant is saved under the SAME BASENAME as <CODE_FILE.py>
+    - The tests are saved under the SAME BASENAME as <TEST_FILE.py>
+    - unittest is invoked as: python -m unittest <TEST_MODULE_NAME>
+      where TEST_MODULE_NAME is basename(TEST_FILE) without .py
 """
 
 import ast
@@ -30,9 +37,9 @@ class ACHWithExactPrompts:
         print(f"Processing files: {code_file}, {test_file}")
         
         # Read input files
-        with open(code_file, 'r') as f:
+        with open(code_file, 'r', encoding='utf-8') as f:
             class_under_test = f.read()
-        with open(test_file, 'r') as f:
+        with open(test_file, 'r', encoding='utf-8') as f:
             existing_test_class = f.read()
             
         print(f"\n Original class length: {len(class_under_test)} chars")
@@ -55,7 +62,7 @@ class ACHWithExactPrompts:
             
             print("\n DEBUG - Generated mutant preview (first 500 chars):")
             print("-" * 40)
-            print(mutated_class)
+            print(mutated_class[:500] + ("..." if len(mutated_class) > 500 else ""))
             print("-" * 40)
             
             # Step 2: Check if syntactically identical
@@ -71,7 +78,12 @@ class ACHWithExactPrompts:
             print("\n" + "="*60)
             print("STEP 3: Validating mutant builds and passes...")
             print("="*60)
-            builds, passes = self._validate_mutant(mutated_class, existing_test_class)
+            builds, passes = self._validate_mutant(
+                mutated_class,
+                existing_test_class,
+                code_filename=code_file,
+                test_filename=test_file,
+            )
             
             if not builds:
                 print("    Mutant doesn't build - discarding")
@@ -118,7 +130,7 @@ class ACHWithExactPrompts:
         
         print("\n DEBUG - Generated test preview (first 500 chars):")
         print("-" * 40)
-        print(new_test_class[:500] + "..." if len(new_test_class) > 500 else new_test_class)
+        print(new_test_class[:500] + ("..." if len(new_test_class) > 500 else ""))
         print("-" * 40)
         
         print("\nSUCCESS: Generated mutant and killing test!")
@@ -129,10 +141,6 @@ class ACHWithExactPrompts:
     
     def _make_fault(self, context, class_under_test, existing_test_class, diff):
         """Table 1: Make a fault - exact prompt from paper"""
-#         prompt = f"""CONTEXT: {context} INSTRUCTION: Here is a Python class and a test class with some unit tests for the class under test
-# '''{class_under_test}'''. '''{existing_test_class}'''. Write a new version of the class under test in which each method is replaced by a new
-# version of that method that contains a typical bug that introduces a privacy violation similar to {diff}. Delimit the mutated part using the
-# comment-pair '# MUTANT START' and '# MUTANT END'"""
         prompt = f"""CONTEXT: {context} INSTRUCTION: Here is a Python class and a test class with some unit tests for the class under test
 '''{class_under_test}'''. '''{existing_test_class}'''. Write a new version of the class under test in which each method is replaced by a new
 version of that method that contains a typical bug that introduces a privacy violation similar to {diff}. The bug should be SUBTLE enough that
@@ -227,11 +235,16 @@ will fail on the mutant version of the class, but would pass on the correct vers
             print("   No markdown block found, returning raw response")
             return text
     
-    def _validate_mutant(self, mutated_code, test_code):
-        """Check if mutant builds and passes existing tests"""
+    def _validate_mutant(self, mutated_code: str, test_code: str, *, code_filename: str, test_filename: str):
+        """
+        Check if mutant builds and passes existing tests.
+
+        Saves files using the SAME BASENAMES as the originals so imports keep working.
+        Then runs: python -m unittest <test_module_basename> -v
+        """
         print("\n Validating mutant...")
         
-        # Check syntax
+        # Check syntax of the mutant first
         try:
             ast.parse(mutated_code)
             print("   Mutant syntax is valid")
@@ -240,38 +253,49 @@ will fail on the mutant version of the class, but would pass on the correct vers
             print(f"      Line {e.lineno}: {e.text}")
             return False, False
             
-        # Run tests against mutant
         with tempfile.TemporaryDirectory() as tmpdir:
             print(f"   Created temp directory: {tmpdir}")
-            
-            # Save mutated code
-            code_path = os.path.join(tmpdir, "user_service.py")
-            with open(code_path, 'w') as f:
+
+            # Determine basenames and module name
+            code_base = os.path.basename(code_filename)
+            test_base = os.path.basename(test_filename)
+            test_module = os.path.splitext(test_base)[0]
+
+            # Save mutated code under SAME name as provided code file
+            code_path = os.path.join(tmpdir, code_base)
+            with open(code_path, 'w', encoding='utf-8') as f:
                 f.write(mutated_code)
             print(f"    Saved mutant to {code_path}")
-            
-            # Save test file
-            test_path = os.path.join(tmpdir, "test_user_service.py")
-            with open(test_path, 'w') as f:
+
+            # Save tests under SAME name as provided test file
+            test_path = os.path.join(tmpdir, test_base)
+            with open(test_path, 'w', encoding='utf-8') as f:
                 f.write(test_code)
             print(f"    Saved tests to {test_path}")
             
             # Run tests
-            print("   Running tests...")
+            print(f"   Running tests as module: {test_module}")
             try:
                 result = subprocess.run(
-                    [sys.executable, "-m", "unittest", "test_user_service", "-v"],
+                    [sys.executable, "-m", "unittest", test_module, "-v"],
                     capture_output=True,
                     text=True,
                     cwd=tmpdir,
-                    timeout=10
+                    timeout=20
                 )
-                
+                # Show a concise preview of output
+                out_preview = (result.stdout or "")[:800]
+                err_preview = (result.stderr or "")[:400]
+                print("   --- unittest STDOUT (truncated) ---")
+                print(out_preview)
+                if result.returncode != 0:
+                    print("   --- unittest STDERR (truncated) ---")
+                    print(err_preview)
+
                 if result.returncode == 0:
                     print("   All tests pass")
                 else:
-                    print("    Some tests failed")
-                    print("   STDERR:", result.stderr[:500])
+                    print("    Some tests failed (return code {})".format(result.returncode))
                     
                 return True, result.returncode == 0
             except subprocess.TimeoutExpired:
@@ -291,7 +315,7 @@ will fail on the mutant version of the class, but would pass on the correct vers
             try:
                 tree = ast.parse(code)
                 return ast.unparse(tree)
-            except:
+            except Exception:
                 return code.strip()
         
         original_clean = clean(original)
@@ -310,26 +334,36 @@ will fail on the mutant version of the class, but would pass on the correct vers
 
 
 def main():
-    """Run ACH with exact prompts from the paper"""
+    """Run ACH with exact prompts from the paper (dynamic filenames)"""
     if len(sys.argv) != 3:
-        print("Usage: python ach_debug.py user_service.py test_user_service.py")
+        print("Usage: python ach_debug.py <CODE_FILE.py> <TEST_FILE.py>")
         sys.exit(1)
     
+    code_file = sys.argv[1]
+    test_file = sys.argv[2]
+
+    if not os.path.isfile(code_file):
+        print(f"Error: code file not found: {code_file}")
+        sys.exit(2)
+    if not os.path.isfile(test_file):
+        print(f"Error: test file not found: {test_file}")
+        sys.exit(2)
+
     print(" ACH Workflow Starting")
     print("-" * 60)
     
     ach = ACHWithExactPrompts()
-    result = ach.run_workflow(sys.argv[1], sys.argv[2])
+    result = ach.run_workflow(code_file, test_file)
     
     if result:
         print("\n" + "="*60)
         print("FINAL RESULTS")
         print("="*60)
         
-        # Save results
-        with open("mutant_output.py", 'w') as f:
+        # Save results (generic names)
+        with open("mutant_output.py", 'w', encoding='utf-8') as f:
             f.write(result['mutant'])
-        with open("test_output.py", 'w') as f:
+        with open("test_output.py", 'w', encoding='utf-8') as f:
             f.write(result['test'])
         print(" Saved: mutant_output.py and test_output.py")
     else:
