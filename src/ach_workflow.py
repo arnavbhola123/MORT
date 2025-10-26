@@ -17,10 +17,14 @@ class ACHWorkflow:
         print(f"Processing: {code_file}, {test_file}")
         
         # Read input files
+
+        # TODO: Need to chunk code blocks as opposed to analyzing whole files
         with open(code_file, 'r', encoding='utf-8') as f:
             class_under_test = f.read()
         with open(test_file, 'r', encoding='utf-8') as f:
             existing_test_class = f.read()
+
+        # TODO: customize context + diff based on mutation type
             
         # Context about privacy concerns
         context_about_concern = """Privacy violations in user data handling:
@@ -40,21 +44,7 @@ class ACHWorkflow:
         mutated_class = self._make_fault(
             context_about_concern, class_under_test, existing_test_class, diff
         )
-        
-        # STEP 2: Remove syntactically identical (Table 2: 25% of mutants)
-        print("\n" + "="*60)
-        print("STEP 2: Check syntactic identity")
-        print("="*60)
-        if self.validator.is_syntactically_identical(class_under_test, mutated_class):
-            print("  ✗ Syntactically identical - DISCARD")
-            return None
-        print("  ✓ Syntactically different")
-        
-        # STEP 2b: Check if only comments added (Table 5: 61% of equivalent mutants)
-        if self.validator.only_comments_changed(class_under_test, mutated_class):
-            print("  ✗ Only comments changed - DISCARD")
-            return None
-            
+
         # STEP 3: Validate mutant builds and passes
         print("\n" + "="*60)
         print("STEP 3: Validate mutant")
@@ -70,6 +60,17 @@ class ACHWorkflow:
             print("  ✗ Mutant fails existing tests - DISCARD")
             return None
         print("  ✓ Mutant builds and passes")
+
+
+        # TODO: currently checking syntactic identity for entire file, need to do per method/mutant
+        # STEP 2: Remove syntactically identical (Table 2: 25% of mutants)
+        print("\n" + "="*60)
+        print("STEP 2: Check syntactic identity")
+        print("="*60)
+        if self.validator.is_syntactically_identical(class_under_test, mutated_class):
+            print("  ✗ Syntactically identical - DISCARD")
+            return None
+        print("  ✓ Syntactically different")
         
         # STEP 4: Equivalence detection
         print("\n" + "="*60)

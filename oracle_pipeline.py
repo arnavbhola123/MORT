@@ -344,10 +344,6 @@ The tests you generate should FAIL on the buggy original code and PASS on correc
                 print("    [X] Syntactically identical")
                 continue
             
-            # Step 2: Comment-only changes
-            if self.validator.only_comments_changed(original_code, mutant):
-                print("    [X] Only comments changed")
-                continue
             
             # Step 3: Syntax validation
             is_valid, error = self.validator.validate_syntax(mutant)

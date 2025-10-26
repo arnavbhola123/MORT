@@ -21,17 +21,6 @@ class CodeValidator:
         return normalize(original) == normalize(mutated)
     
     @staticmethod
-    def only_comments_changed(original: str, mutated: str) -> bool:
-        """Table 5: Misleading comments (61% of equivalent mutants)"""
-        def remove_comments(code):
-            return re.sub(r'#.*$', '', code, flags=re.MULTILINE)
-        
-        orig_no_comments = remove_comments(original)
-        mut_no_comments = remove_comments(mutated)
-        
-        return orig_no_comments == mut_no_comments
-    
-    @staticmethod
     def validate_syntax(code: str) -> tuple:
         """Check if code has valid syntax"""
         try:

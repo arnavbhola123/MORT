@@ -1,12 +1,14 @@
 """Prompt templates from Table 1 - EXACT replication"""
 
 
+#TODO: Fix all prompts to account for chunking approach
 class PromptTemplates:
     @staticmethod
     def make_fault(context: str, class_under_test: str, 
                    existing_test_class: str, diff: str) -> str:
         """Table 1: Make a fault - EXACT prompt"""
         # Note: Paper uses Kotlin, we adapt to Python
+        # NOTE: prmopt is subtly different from paper to include request for "subtle" mutants
         return f"""CONTEXT: {context} INSTRUCTION: Here is a Python class and a test class with some unit tests for the class under test
 '''{class_under_test}'''. '''{existing_test_class}'''. Write a new version of the class under test in which each method is replaced by a new
 version of that method that contains a typical bug that introduces a privacy violation similar to {diff}. The bug should be SUBTLE enough that
