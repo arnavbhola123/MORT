@@ -8,3 +8,4 @@ outputs/*.py
 *.py[cod]
 .pytest_cache/
 .DS_Store
+.zed/
