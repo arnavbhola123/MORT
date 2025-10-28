@@ -1,4 +1,5 @@
 """Code chunking utilities using LLM"""
+
 import json
 import re
 import os
@@ -27,68 +28,76 @@ class CodeChunker:
 
         if os.path.exists(cache_file):
             print(f"  Using cached chunks from {cache_file}")
-            with open(cache_file, 'r') as f:
+            with open(cache_file, "r") as f:
                 cached_data = json.load(f)
-                mutable_count = sum(1 for c in cached_data['chunks'] if c['is_mutable'])
-                print(f"  ✓ Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)")
+                mutable_count = sum(1 for c in cached_data["chunks"] if c["is_mutable"])
+                print(
+                    f"  ✓ Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)"
+                )
                 return cached_data
 
         print(f"  Using LLM to chunk file...")
 
         prompt = f"""Analyze this Python file and break it into chunks for mutation testing.
 
-FILE:
-```python
-{code}
-```
+                    FILE:
+                    FILE_NAME: {file_path}
+                    ```python
+                    {code}
+                    ```
 
-TASK: Split this file into logical chunks where:
-1. Each chunk is either:
-   - A complete function/method (mutable)
-   - A complete class (mutable if simple, like dataclasses)
-   - Module-level code like imports, constants, main blocks (NOT mutable)
+                    TASK: Split this file into logical chunks where:
+                    1. Each chunk is either:
+                    - A complete function/method (mutable)
+                    - A complete class (mutable if simple, like dataclasses)
+                    - Module-level code like imports, constants, main blocks (NOT mutable)
 
-2. When all chunks are joined together IN ORDER, they must form the original file exactly
+                    2. When all chunks are joined together IN ORDER, they must form the original file exactly
 
-3. For each chunk provide:
-   - chunk_id: identifier (e.g., "imports", "constants", "function_name", "ClassName")
-   - is_mutable: true if this chunk should be mutated (functions, methods, classes), false for imports/constants/config
-   - code: the complete code for this chunk (preserve ALL whitespace, newlines, comments)
+                    3. For each chunk provide:
+                    - chunk_id: identifier (e.g., "imports", "constants", "function_name", "ClassName")
+                    - file_name: the relative path to the file
+                    - is_mutable: true if this chunk should be mutated (functions, methods, classes), false for imports/constants/config
+                    - code: the complete code for this chunk (preserve ALL whitespace, newlines, comments)
 
-IMPORTANT:
-- Preserve ALL whitespace, blank lines, and formatting
-- Each chunk must be complete and valid
-- The chunks must reconstruct the file perfectly when joined
-- Mark imports, constants, and config as NOT mutable
-- Mark functions, methods, and classes as mutable (except __init__, __str__, etc.)
+                    IMPORTANT:
+                    - Preserve ALL whitespace, blank lines, and formatting
+                    - Each chunk must be complete and valid
+                    - The chunks must reconstruct the file perfectly when joined
+                    - Mark imports, constants, and config as NOT mutable
+                    - Mark functions, methods, and classes as mutable (except __init__, __str__, etc.)
 
-Return ONLY valid JSON:
-{{
-  "chunks": [
-    {{
-      "chunk_id": "imports",
-      "is_mutable": false,
-      "code": "import statements\\n\\n"
-    }},
-    {{
-      "chunk_id": "function_name",
-      "is_mutable": true,
-      "code": "def function_name():\\n    pass\\n\\n"
-    }}
-  ]
-}}"""
+                    Return ONLY valid JSON:
+                    {{
+                    "chunks": [
+                        {{
+                        "chunk_id": "imports",
+                        "file_name": "file1.py",
+                        "is_mutable": false,
+                        "code": "import statements\\n\\n"
+                        }},
+                        {{
+                        "chunk_id": "function_name",
+                        "file_name": "file2.py",
+                        "is_mutable": true,
+                        "code": "def function_name():\\n    pass\\n\\n"
+                        }}
+                    ]
+                    }}"""
 
         response = self.llm.invoke(prompt)
 
         # Extract JSON from response
         try:
             # Try to find JSON in markdown code block
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+            json_match = re.search(
+                r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL
+            )
             if json_match:
                 json_str = json_match.group(1)
             else:
                 # Try to find raw JSON
-                json_match = re.search(r'(\{.*\})', response, re.DOTALL)
+                json_match = re.search(r"(\{.*\})", response, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
@@ -99,7 +108,7 @@ Return ONLY valid JSON:
             data = json.loads(json_str)
 
             # Verify chunks reconstruct the file
-            reconstructed = ''.join([c['code'] for c in data['chunks']])
+            reconstructed = "".join([c["code"] for c in data["chunks"]])
             if reconstructed.strip() != code.strip():
                 print("WARNING: Chunks don't perfectly reconstruct the file")
                 print(f"  Original length: {len(code)}")
@@ -107,35 +116,33 @@ Return ONLY valid JSON:
 
             # Convert to our format
             chunks = []
-            for chunk_data in data['chunks']:
-                chunks.append({
-                    'chunk_id': chunk_data['chunk_id'],
-                    'chunk_type': 'unknown',  # LLM doesn't need to specify
-                    'original_code': chunk_data['code'],
-                    'context': {
-                        'parent_class': None,
-                        'class_header': None,
-                        'line_start': 0,
-                        'line_end': 0,
-                        'indentation': 0,
-                        'decorators': [],
-                        'file_path': file_path,
-                    },
-                    'is_mutable': chunk_data.get('is_mutable', False),
-                    'mutated_versions': []
-                })
+            for chunk_data in data["chunks"]:
+                chunks.append(
+                    {
+                        "chunk_id": chunk_data["chunk_id"],
+                        "chunk_type": "unknown",  # LLM doesn't need to specify
+                        "original_code": chunk_data["code"],
+                        "context": {
+                            "parent_class": None,
+                            "class_header": None,
+                            "line_start": 0,
+                            "line_end": 0,
+                            "indentation": 0,
+                            "decorators": [],
+                            "file_path": file_path,
+                        },
+                        "is_mutable": chunk_data.get("is_mutable", False),
+                        "mutated_versions": [],
+                    }
+                )
 
-            mutable_count = sum(1 for c in chunks if c['is_mutable'])
+            mutable_count = sum(1 for c in chunks if c["is_mutable"])
             print(f"  ✓ Extracted {len(chunks)} chunks ({mutable_count} mutable)")
 
-            result = {
-                'file_path': file_path,
-                'chunks': chunks,
-                'full_code': code
-            }
+            result = {"file_path": file_path, "chunks": chunks, "full_code": code}
 
             # Save to cache
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 json.dump(result, f, indent=2)
             print(f"  Cached chunks to {cache_file}")
 
@@ -151,15 +158,15 @@ Return ONLY valid JSON:
 
     def get_mutable_chunks(self, file_data: Dict) -> List[Dict]:
         """Filter and return only mutable chunks"""
-        if not file_data or 'chunks' not in file_data:
+        if not file_data or "chunks" not in file_data:
             return []
-        return [chunk for chunk in file_data['chunks'] if chunk['is_mutable']]
+        return [chunk for chunk in file_data["chunks"] if chunk["is_mutable"]]
 
     def get_chunk_by_id(self, file_data: Dict, chunk_id: str) -> Optional[Dict]:
         """Get a specific chunk by its ID"""
-        if not file_data or 'chunks' not in file_data:
+        if not file_data or "chunks" not in file_data:
             return None
-        for chunk in file_data['chunks']:
-            if chunk['chunk_id'] == chunk_id:
+        for chunk in file_data["chunks"]:
+            if chunk["chunk_id"] == chunk_id:
                 return chunk
         return None
