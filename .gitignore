@@ -3,9 +3,10 @@ venv/
 .env
 __pycache__/
 *.pyc
-outputs/*.py
+outputs/
 !outputs/.gitkeep
 *.py[cod]
 .pytest_cache/
 .DS_Store
 .zed/
+.chunk_cache/

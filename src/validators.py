@@ -68,6 +68,9 @@ class CodeValidator:
                 )
                 
                 passed = result.returncode == 0
+                if not passed:
+                    print(f"    Test output:\n{result.stdout}")
+                    print(f"    Test errors:\n{result.stderr}")
                 return True, passed
                 
             except subprocess.TimeoutExpired:
