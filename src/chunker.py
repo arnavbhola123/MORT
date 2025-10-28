@@ -41,7 +41,6 @@ class CodeChunker:
         prompt = f"""Analyze this Python file and break it into chunks for mutation testing.
 
                     FILE:
-                    FILE_NAME: {file_path}
                     ```python
                     {code}
                     ```
@@ -56,7 +55,6 @@ class CodeChunker:
 
                     3. For each chunk provide:
                     - chunk_id: identifier (e.g., "imports", "constants", "function_name", "ClassName")
-                    - file_name: the relative path to the file
                     - is_mutable: true if this chunk should be mutated (functions, methods, classes), false for imports/constants/config
                     - code: the complete code for this chunk (preserve ALL whitespace, newlines, comments)
 
@@ -72,15 +70,17 @@ class CodeChunker:
                     "chunks": [
                         {{
                         "chunk_id": "imports",
-                        "file_name": "file1.py",
                         "is_mutable": false,
                         "code": "import statements\\n\\n"
+                        "line_start": integer,
+                        "line_end": integer
                         }},
                         {{
                         "chunk_id": "function_name",
-                        "file_name": "file2.py",
                         "is_mutable": true,
                         "code": "def function_name():\\n    pass\\n\\n"
+                        "line_start": integer,
+                        "line_end": integer
                         }}
                     ]
                     }}"""
@@ -125,8 +125,8 @@ class CodeChunker:
                         "context": {
                             "parent_class": None,
                             "class_header": None,
-                            "line_start": 0,
-                            "line_end": 0,
+                            "line_start": chunk_data["line_start"],
+                            "line_end": chunk_data["line_end"],
                             "indentation": 0,
                             "decorators": [],
                             "file_path": file_path,

@@ -127,7 +127,9 @@ class ACHWorkflow:
 
         # Stitch full file with mutated chunk
         mutated_file = self.stitcher.stitch_file(
-            file_data, chunk["chunk_id"], mutated_chunk_code
+            file_data,
+            chunk["chunk_id"],
+            mutated_chunk_code,  # TODO: This is a bit slow to run since it patches file each time
         )
 
         # STEP 2: Check syntactic identity
