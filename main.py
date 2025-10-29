@@ -13,12 +13,24 @@ load_dotenv()
 
 def main():
     """Run ACH with chunk-based mutation"""
-    if len(sys.argv) != 3:
-        print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py>")
+    if len(sys.argv) < 3:
+        print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py> [max_workers]")
+        print("  max_workers: optional, number of parallel workers (default: 4)")
         sys.exit(1)
 
     code_file = sys.argv[1]
     test_file = sys.argv[2]
+
+    # Optional: get max_workers from command line or env
+    max_workers = 3  # default
+    if len(sys.argv) > 3:
+        try:
+            max_workers = int(sys.argv[3])
+        except ValueError:
+            print(f"Warning: Invalid max_workers '{sys.argv[3]}', using default: 3")
+    else:
+        # Allow override from environment variable
+        max_workers = int(os.getenv("MAX_WORKERS", "4"))
 
     if not os.path.isfile(code_file):
         print(f"Error: code file not found: {code_file}")
@@ -34,7 +46,7 @@ def main():
     model = os.getenv("MODEL", MODEL)
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
 
-    ach = ACHWorkflow(model, provider)
+    ach = ACHWorkflow(model, provider, max_workers=max_workers)
     result = ach.run_workflow(code_file, test_file)
 
     if result:
@@ -80,7 +92,6 @@ def main():
                 for m in result["mutants"]
             ],
         }
-
         metadata_path = os.path.join(OUTPUT_DIR, "metadata.json")
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
