@@ -1,3 +1,5 @@
+"""Core ACH workflow implementation"""
+
 from src.llm_client import LLMClient
 from src.validators import CodeValidator
 from src.chunker import CodeChunker
@@ -9,7 +11,7 @@ import threading
 
 
 class ACHWorkflow:
-    def __init__(self, model: str, provider: str, max_workers: int = 3):
+    def __init__(self, model: str, provider: str, max_workers: int = 4):
         self.llm = LLMClient(model, provider)
         self.validator = CodeValidator()
         self.prompts = PromptTemplates()
@@ -260,6 +262,24 @@ class ACHWorkflow:
             return None
         self._thread_safe_print("  ✓ Test kills mutant!", chunk_id)
 
+        # STEP 7: LLM as judge - evaluate mutant quality
+        self._thread_safe_print("STEP 7: LLM judge evaluation", chunk_id)
+        llm_score = self._llm_judge_mutant(
+            original_code=chunk["original_code"],
+            mutated_code=mutated_chunk_code,
+            original_test=existing_test_class,
+            new_test=new_test_class,
+            context=context,
+        )
+
+        if llm_score is not None:
+            self._thread_safe_print(f"  ✓ LLM Judge Score: {llm_score}/100", chunk_id)
+        else:
+            self._thread_safe_print(
+                "  ⚠ LLM Judge failed to score, defaulting to 50", chunk_id
+            )
+            llm_score = 50
+
         # Success! Store mutant info
         return {
             "chunk_id": chunk["chunk_id"],
@@ -268,6 +288,7 @@ class ACHWorkflow:
             "mutated_chunk": mutated_chunk_code,
             "mutated_file": mutated_file,
             "test": new_test_class,
+            "llm_judge_score": llm_score,
         }
 
     def _make_fault_for_chunk(
@@ -324,3 +345,61 @@ class ACHWorkflow:
         )
         text = self.llm.invoke(prompt)
         return self.llm.extract_code_from_response(text)
+
+    def _llm_judge_mutant(
+        self,
+        original_code: str,
+        mutated_code: str,
+        original_test: str,
+        new_test: str,
+        context: str,
+    ) -> Optional[int]:
+        """
+        LLM as judge - evaluates the quality and relevance of the generated mutant.
+
+        Args:
+            original_code: The original code chunk
+            mutated_code: The mutated code chunk
+            original_test: The existing test suite
+            new_test: The newly generated test
+            context: The context about the concern (e.g., privacy violations)
+
+        Returns:
+            Score from 0-100, or None if evaluation fails
+        """
+        prompt = self.prompts.llm_judge_mutant(
+            original_code=original_code,
+            mutated_code=mutated_code,
+            original_test=original_test,
+            new_test=new_test,
+            context=context,
+        )
+
+        try:
+            response = self.llm.invoke(prompt).strip()
+
+            # Try to extract score from response
+            # Look for patterns like "Score: 85" or just "85"
+            import re
+
+            # Try to find a number between 0-100
+            matches = re.findall(r"\b(\d{1,3})\b", response)
+
+            for match in matches:
+                score = int(match)
+                if 0 <= score <= 100:
+                    return score
+
+            # If no valid score found, return None
+            return None
+
+        except Exception as e:
+            print(f"  Error in LLM judge: {e}")
+            return None
+
+    # Legacy methods (for backward compatibility)
+    # def _make_fault(self, context, class_under_test, existing_test_class, diff):
+    #     """Table 1: Make a fault (legacy method for full-file mutation)"""
+    #     prompt = self.prompts.make_fault(context, class_under_test, existing_test_class, diff)
+    #     text = self.llm.invoke(prompt)
+    #     return self.llm.extract_code_from_response(text)

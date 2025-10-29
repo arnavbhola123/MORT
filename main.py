@@ -75,6 +75,7 @@ def main():
             print(f"  [{idx + 1}] {mutant_data['chunk_id']}")
             print(f"      Mutant: {mutant_path}")
             print(f"      Test:   {test_path}")
+            print(f"      ✨🏆 LLM JUDGE SCORE: {mutant_data['llm_judge_score']} 🏆✨")
 
         # Save metadata
         metadata = {
@@ -105,4 +106,5 @@ if __name__ == "__main__":
     t1 = time.time()
     main()
     t2 = time.time()
-    print(f"Finished in {t2 - t1:.2f} seconds")
+    print(f"\n\n⏰ Finished in {t2 - t1:.2f} seconds")
+    exit(0)
