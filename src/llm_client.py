@@ -27,3 +27,21 @@ class LLMClient:
             print("   No markdown code block found, returning raw response")
             # Convert // comments to # for Python
             return text.replace("// MUTANT", "# MUTANT")
+
+    def extract_json_from_response(self, text: str) -> str:
+        """Extract JSON from markdown blocks or raw response"""
+        # Try to find JSON in markdown code block (```json or ````)
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if json_match:
+            print(f"   Extracted JSON from markdown block")
+            return json_match.group(1)
+
+        # Try to find raw JSON (just the braces and content)
+        json_match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if json_match:
+            print(f"   Extracted raw JSON from response")
+            return json_match.group(1)
+
+        # Return original text if no JSON found
+        print("   No JSON found, returning raw response")
+        return text

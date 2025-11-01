@@ -38,6 +38,7 @@ class CodeChunker:
 
         print(f"  Using LLM to chunk file...")
 
+        # TODO: Might want to include additional check to see if mutation is "good" or "important"
         prompt = f"""Analyze this Python file and break it into chunks for mutation testing.
 
                     FILE:

@@ -15,7 +15,7 @@ def main():
     """Run ACH with chunk-based mutation"""
     if len(sys.argv) < 3:
         print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py> [max_workers]")
-        print("  max_workers: optional, number of parallel workers (default: 4)")
+        print("  max_workers: optional, number of parallel workers (default: 3)")
         sys.exit(1)
 
     code_file = sys.argv[1]
@@ -30,7 +30,7 @@ def main():
             print(f"Warning: Invalid max_workers '{sys.argv[3]}', using default: 3")
     else:
         # Allow override from environment variable
-        max_workers = int(os.getenv("MAX_WORKERS", "4"))
+        max_workers = int(os.getenv("MAX_WORKERS", "3"))
 
     if not os.path.isfile(code_file):
         print(f"Error: code file not found: {code_file}")
@@ -75,7 +75,7 @@ def main():
             print(f"  [{idx + 1}] {mutant_data['chunk_id']}")
             print(f"      Mutant: {mutant_path}")
             print(f"      Test:   {test_path}")
-            print(f"      ✨🏆 LLM JUDGE SCORE: {mutant_data['llm_judge_score']} 🏆✨")
+            print(f"      LLM JUDGE SCORES: {mutant_data['scores']}")
 
         # Save metadata
         metadata = {

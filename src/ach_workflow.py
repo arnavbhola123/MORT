@@ -8,10 +8,10 @@ from prompts.templates import PromptTemplates
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-
+import json
 
 class ACHWorkflow:
-    def __init__(self, model: str, provider: str, max_workers: int = 4):
+    def __init__(self, model: str, provider: str, max_workers: int = 3):
         self.llm = LLMClient(model, provider)
         self.validator = CodeValidator()
         self.prompts = PromptTemplates()
@@ -264,7 +264,7 @@ class ACHWorkflow:
 
         # STEP 7: LLM as judge - evaluate mutant quality
         self._thread_safe_print("STEP 7: LLM judge evaluation", chunk_id)
-        llm_score = self._llm_judge_mutant(
+        scores_dict  = self._llm_judge_mutant(
             original_code=chunk["original_code"],
             mutated_code=mutated_chunk_code,
             original_test=existing_test_class,
@@ -272,13 +272,13 @@ class ACHWorkflow:
             context=context,
         )
 
-        if llm_score is not None:
-            self._thread_safe_print(f"  ✓ LLM Judge Score: {llm_score}/100", chunk_id)
-        else:
-            self._thread_safe_print(
-                "  ⚠ LLM Judge failed to score, defaulting to 50", chunk_id
-            )
-            llm_score = 50
+        for score in scores_dict.keys():
+            if scores_dict[score] is not None:
+                self._thread_safe_print(f" {score} : {scores_dict[score]}", chunk_id)
+            else:
+                self._thread_safe_print(
+                    "score not found", chunk_id
+                )
 
         # Success! Store mutant info
         return {
@@ -288,7 +288,7 @@ class ACHWorkflow:
             "mutated_chunk": mutated_chunk_code,
             "mutated_file": mutated_file,
             "test": new_test_class,
-            "llm_judge_score": llm_score,
+            "scores": scores_dict,
         }
 
     def _make_fault_for_chunk(
@@ -376,23 +376,17 @@ class ACHWorkflow:
         )
 
         try:
-            response = self.llm.invoke(prompt).strip()
+            response = self.llm.invoke(prompt)
+            print(response)
 
-            # Try to extract score from response
-            # Look for patterns like "Score: 85" or just "85"
-            import re
+            # Extract JSON from markdown or raw response
+            json_str = self.llm.extract_json_from_response(response)
+            return json.loads(json_str)
 
-            # Try to find a number between 0-100
-            matches = re.findall(r"\b(\d{1,3})\b", response)
-
-            for match in matches:
-                score = int(match)
-                if 0 <= score <= 100:
-                    return score
-
-            # If no valid score found, return None
+        except json.JSONDecodeError as e:
+            print(f"  Error parsing JSON from LLM judge: {e}")
+            print(f"  Response was: {response}")
             return None
-
         except Exception as e:
             print(f"  Error in LLM judge: {e}")
             return None

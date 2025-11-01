@@ -79,6 +79,15 @@ original version of the class under test:'''{original_class}'''. This is the mut
 Here is the existing test class:'''{existing_test_class}'''. Write an extended version of the test class that contains extra test cases that
 will fail on the mutant version of the class, but would pass on the correct version."""
 
+# Mutants
+#  1. Concern Relevancy - is mutation relevant to the specific concern? e.g. privacy, scale 0-10
+#  2. Contextual ("Business Logic") Relevancy - Does mutation signficiantly impact business logic? bool yes/no
+#  3. Mutation Realism - is mutation realistic (something a developer might actually do)? scale 0-10
+
+# test case enhancement
+# 1. Test Quality: Does the new test or modification of existing effectively catch the mutant? Is it well-designed and focused?, scale 0-10
+# 2. Test relevancy: Does structure of test or modification adhere to existing test suite? bool yes/no
+
     def llm_judge_mutant(
         self,
         original_code: str,
@@ -90,39 +99,44 @@ will fail on the mutant version of the class, but would pass on the correct vers
         """Prompt for LLM to judge mutant quality"""
         return f"""You are an expert code reviewer evaluating the quality and relevance of a generated code mutant and its corresponding test.
 
-   CONTEXT OF CONCERN:
-   {context}
+CONTEXT OF CONCERN:
+{context}
 
-   ORIGINAL CODE:
-   ```python
-   {original_code}
-   ```
+ORIGINAL CODE:
+```python
+{original_code}
+```
 
-   MUTATED CODE:
-   ```python
-   {mutated_code}
-   ```
+MUTATED CODE:
+```python
+{mutated_code}
+```
 
-   ORIGINAL TEST SUITE:
-   ```python
-   {original_test}
-   ```
+ORIGINAL TEST SUITE:
+```python
+{original_test}
+```
 
-   NEW TEST (designed to catch the mutant):
-   ```python
-   {new_test}
-   ```
+NEW TEST (designed to catch the mutant):
+```python
+{new_test}
+```
 
-   Evaluate this mutant based on the following criteria:
+Evaluate the mutant and test based on the following criteria:
 
-   1. **Relevance to Context (0-30 points)**: Does the mutation introduce a fault related to the concern (e.g., privacy violations)? Is it realistic?
+Concern Relevancy - is mutation relevant to the specific concern? e.g. privacy, scale 0-10
+Contextual ("Business Logic") Relevancy - Does mutation significantly impact business logic? bool yes/no
+Mutation Realism - is mutation realistic (something a developer might actually do)? scale 0-10
 
-   2. **Subtlety & Quality (0-30 points)**: Is the mutation subtle and realistic (not trivially obvious)? Would a developer plausibly make this mistake?
+Test Quality: Does the new test or modification of existing effectively catch the mutant? Is it well-designed and focused?, scale 0-10
+Test relevancy: Does structure of test or modification adhere to existing test suite? bool yes/no
 
-   3. **Test Quality (0-25 points)**: Does the new test effectively catch the mutant? Is it well-designed and focused?
-
-   4. **Educational Value (0-15 points)**: Does this mutant-test pair teach something valuable about the concern? Would it help developers avoid similar issues?
-
-   Provide your evaluation as a single integer score from 0 to 100.
-
-   **Response format**: Only output the integer score, nothing else. For example: 85"""
+Return your evaluation in the following JSON format with NO additional commentary:
+{{
+    "concern_relevancy": int (0-10),
+    "contextual_relevancy": "yes" or "no",
+    "mutation_realism": int (0-10),
+    "test_quality": int (0-10),
+    "test_relevancy": "yes" or "no"
+}}
+"""
