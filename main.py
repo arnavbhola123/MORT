@@ -14,8 +14,9 @@ load_dotenv()
 def main():
     """Run ACH with chunk-based mutation"""
     if len(sys.argv) < 3:
-        print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py> [max_workers]")
+        print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py> [max_workers] [chunker_mode]")
         print("  max_workers: optional, number of parallel workers (default: 3)")
+        print("  chunker_mode: optional, 'llm' or 'ast' (default: 'llm')")
         sys.exit(1)
 
     code_file = sys.argv[1]
@@ -32,6 +33,17 @@ def main():
         # Allow override from environment variable
         max_workers = int(os.getenv("MAX_WORKERS", "3"))
 
+    # Optional: get chunker mode from command line or env
+    chunker_mode = "llm"  # default
+    if len(sys.argv) > 4:
+        chunker_mode = sys.argv[4].lower()
+        if chunker_mode not in ["llm", "ast"]:
+            print(f"Warning: Invalid chunker_mode '{sys.argv[4]}', using default: 'llm'")
+            chunker_mode = "llm"
+    else:
+        # Allow override from environment variable
+        chunker_mode = os.getenv("CHUNKER_MODE", "llm").lower()
+
     if not os.path.isfile(code_file):
         print(f"Error: code file not found: {code_file}")
         sys.exit(2)
@@ -41,12 +53,13 @@ def main():
 
     print(" ACH Workflow Starting")
     print("-" * 60)
+    print(f"Chunker mode: {chunker_mode.upper()}")
 
     # Use constants, but allow .env to override
     model = os.getenv("MODEL", MODEL)
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
 
-    ach = ACHWorkflow(model, provider, max_workers=max_workers)
+    ach = ACHWorkflow(model, provider, max_workers=max_workers, chunker_mode=chunker_mode)
     result = ach.run_workflow(code_file, test_file)
 
     if result:

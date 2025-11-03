@@ -11,11 +11,14 @@ import threading
 import json
 
 class ACHWorkflow:
-    def __init__(self, model: str, provider: str, max_workers: int = 3):
+    def __init__(self, model: str, provider: str, max_workers: int = 3, chunker_mode: str = "llm"):
         self.llm = LLMClient(model, provider)
         self.validator = CodeValidator()
         self.prompts = PromptTemplates()
-        self.chunker = CodeChunker()
+
+        # Create chunker with specified mode (llm or ast)
+        self.chunker = CodeChunker(mode=chunker_mode)
+        self.chunker_mode = chunker_mode.lower()
         self.stitcher = FileStitcher()
         self.max_workers = max_workers
         self._print_lock = threading.Lock()
@@ -32,6 +35,7 @@ class ACHWorkflow:
         """Run the ACH workflow with chunk-based mutation"""
         print("Starting ACH Workflow (chunk-based mutation)...")
         print(f"Using model: {self.llm.model}")
+        print(f"Chunker mode: {self.chunker_mode.upper()}")
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
 
