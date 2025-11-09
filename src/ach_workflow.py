@@ -4,14 +4,17 @@ from src.llm_client import LLMClient
 from src.validators import CodeValidator
 from src.chunker import CodeChunker
 from src.stitcher import FileStitcher
+from src.repo_manager import RepoManager
 from prompts.templates import PromptTemplates
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import json
-
+import os
+import constants
 class ACHWorkflow:
-    def __init__(self, model: str, provider: str, max_workers: int = 3, chunker_mode: str = "llm"):
+    def __init__(self, repo_path: str, model: str, provider: str, max_workers: int = 3, chunker_mode: str = "llm"):
+        self.repo_path = os.path.abspath(repo_path)
         self.llm = LLMClient(model, provider)
         self.validator = CodeValidator()
         self.prompts = PromptTemplates()
@@ -23,6 +26,12 @@ class ACHWorkflow:
         self.max_workers = max_workers
         self._print_lock = threading.Lock()
 
+        # Repository manager for creating temp copies
+        self.repo_manager = RepoManager(repo_path, constants.TEMP_TESTING_DIR)
+
+        # Thread-local storage for worker copies
+        self._worker_copies = {}
+
     def _thread_safe_print(self, message: str, chunk_id: str = None):
         """Thread-safe printing with optional chunk identification"""
         with self._print_lock:
@@ -31,6 +40,44 @@ class ACHWorkflow:
             else:
                 print(message)
 
+    def _save_chunk_output(self, result: Dict, chunk_id: str):
+        """
+        Immediately save mutant and test to outputs folder.
+        Thread-safe with lock to prevent concurrent writes.
+        """
+        try:
+            # Create outputs directory if it doesn't exist
+            os.makedirs(constants.OUTPUT_DIR, exist_ok=True)
+
+            # Sanitize chunk_id for filename
+            safe_chunk_id = chunk_id.replace(".", "_")
+
+            # Save mutant file
+            mutant_path = os.path.join(constants.OUTPUT_DIR, f"mutant_{safe_chunk_id}.py")
+            with open(mutant_path, "w", encoding="utf-8") as f:
+                f.write(result["mutated_file"])
+
+            # Save test file
+            test_path = os.path.join(constants.OUTPUT_DIR, f"test_{safe_chunk_id}.py")
+            with open(test_path, "w", encoding="utf-8") as f:
+                f.write(result["test"])
+
+            # Save metadata for this chunk
+            metadata = {
+                "chunk_id": result["chunk_id"],
+                "chunk_type": result["chunk_type"],
+                "files": {
+                    "mutant": f"mutant_{safe_chunk_id}.py",
+                    "test": f"test_{safe_chunk_id}.py",
+                }
+            }
+            metadata_path = os.path.join(constants.OUTPUT_DIR, f"metadata_{safe_chunk_id}.json")
+            with open(metadata_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2)
+
+        except Exception as e:
+            self._thread_safe_print(f"⚠ Failed to save output: {e}", chunk_id)
+
     def run_workflow(self, code_file: str, test_file: str) -> Optional[Dict]:
         """Run the ACH workflow with chunk-based mutation"""
         print("Starting ACH Workflow (chunk-based mutation)...")
@@ -38,6 +85,26 @@ class ACHWorkflow:
         print(f"Chunker mode: {self.chunker_mode.upper()}")
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
+
+        # Calculate relative paths from repo root
+        self.code_relpath = self.repo_manager.get_relative_path(code_file)
+        self.test_relpath = self.repo_manager.get_relative_path(test_file)
+
+        print(f"Repository: {self.repo_path}")
+        print(f"Code file (relative): {self.code_relpath}")
+        print(f"Test file (relative): {self.test_relpath}")
+
+        # Create master copy with dependencies installed (cached if exists)
+        print("\n" + "=" * 60)
+        print("CREATING MASTER REPOSITORY COPY")
+        print("=" * 60)
+        try:
+            self.repo_manager.create_master_copy(constants.EXCLUDE_FROM_COPY)
+            print(f"  ✓ Master copy ready with installed dependencies")
+            print(f"  ✓ Using Python: {self.repo_manager.venv_python}")
+        except Exception as e:
+            print(f"  ✗ Failed to create master copy: {e}")
+            return None
 
         # Read input files
         with open(code_file, "r", encoding="utf-8") as f:
@@ -94,8 +161,6 @@ class ACHWorkflow:
                     existing_test_class,
                     context_about_concern,
                     diff,
-                    code_file,
-                    test_file,
                     total_chunks,
                 ): (idx, chunk)
                 for idx, chunk in enumerate(mutable_chunks)
@@ -110,6 +175,16 @@ class ACHWorkflow:
                         successful_mutants.append(result)
                 except Exception as e:
                     self._thread_safe_print(f"✗ Exception: {e}", chunk["chunk_id"])
+
+        # Cleanup worker copies (preserve master copy cache)
+        print("\n" + "=" * 60)
+        print("CLEANING UP WORKER COPIES")
+        print("=" * 60)
+        try:
+            self.repo_manager.cleanup_worker_copies()
+            print("  ✓ Worker copies cleaned up (master copy preserved)")
+        except Exception as e:
+            print(f"  ⚠ Cleanup warning: {e}")
 
         # Summary
         print("\n" + "=" * 60)
@@ -136,8 +211,6 @@ class ACHWorkflow:
         existing_test_class: str,
         context: str,
         diff: str,
-        code_file: str,
-        test_file: str,
         total_chunks: int,
     ) -> Optional[Dict]:
         """Process a single chunk with its index (for parallel execution)"""
@@ -147,14 +220,26 @@ class ACHWorkflow:
             f"{'=' * 50}\nStarting chunk {idx + 1}/{total_chunks}\n{'=' * 50}", chunk_id
         )
 
+        # Get or create worker copy for this thread
+        worker_id = threading.current_thread().ident
+        if worker_id not in self._worker_copies:
+            try:
+                temp_repo = self.repo_manager.create_worker_copy(str(worker_id))
+                self._worker_copies[worker_id] = temp_repo
+                self._thread_safe_print(f"Created worker copy: {temp_repo}", chunk_id)
+            except Exception as e:
+                self._thread_safe_print(f"✗ Failed to create worker copy: {e}", chunk_id)
+                return None
+
+        temp_repo = self._worker_copies[worker_id]
+
         result = self._process_chunk(
             chunk,
             file_data,
             existing_test_class,
             context,
             diff,
-            code_file,
-            test_file,
+            temp_repo,
         )
 
         if result:
@@ -173,8 +258,7 @@ class ACHWorkflow:
         existing_test_class: str,
         context: str,
         diff: str,
-        code_file: str,
-        test_file: str,
+        temp_repo: str,
     ) -> Optional[Dict]:
         """Process a single chunk through the ACH workflow"""
         chunk_id = chunk["chunk_id"]
@@ -208,7 +292,12 @@ class ACHWorkflow:
         # STEP 3: Validate mutant builds and passes
         self._thread_safe_print("STEP 3: Validate mutant", chunk_id)
         builds, passes = self.validator.run_tests(
-            mutated_file, existing_test_class, code_file, test_file
+            mutated_file,
+            existing_test_class,
+            temp_repo,
+            self.code_relpath,
+            self.test_relpath,
+            self.repo_manager.venv_python
         )
 
         if not builds:
@@ -243,9 +332,28 @@ class ACHWorkflow:
         # STEP 6: Validate test
         self._thread_safe_print("STEP 6: Validate generated test", chunk_id)
 
+        # Success! Store mutant info
+        temp_result = {
+            "chunk_id": chunk["chunk_id"],
+            "chunk_type": chunk["chunk_type"],
+            "original_chunk": chunk["original_code"],
+            "mutated_chunk": mutated_chunk_code,
+            "mutated_file": mutated_file,
+            "test": new_test_class,
+        }
+
+        # Immediately save to outputs folder
+        self._save_chunk_output(temp_result, chunk_id)
+        
+
         # 6a: Passes on original?
         builds_orig, passes_orig = self.validator.run_tests(
-            file_data["full_code"], new_test_class, code_file, test_file
+            file_data["full_code"],
+            new_test_class,
+            temp_repo,
+            self.code_relpath,
+            self.test_relpath,
+            self.repo_manager.venv_python
         )
         if not builds_orig or not passes_orig:
             self._thread_safe_print("  ✗ Test fails on original - DISCARD", chunk_id)
@@ -253,8 +361,16 @@ class ACHWorkflow:
         self._thread_safe_print("  ✓ Test passes on original", chunk_id)
 
         # 6b: Fails on mutant?
+
+        print(self.test_relpath)
+        
         builds_mut, passes_mut = self.validator.run_tests(
-            mutated_file, new_test_class, code_file, test_file
+            mutated_file,
+            new_test_class,
+            temp_repo,
+            self.code_relpath,
+            self.test_relpath,
+            self.repo_manager.venv_python
         )
         if not builds_mut:
             self._thread_safe_print(
@@ -285,7 +401,7 @@ class ACHWorkflow:
                 )
 
         # Success! Store mutant info
-        return {
+        result = {
             "chunk_id": chunk["chunk_id"],
             "chunk_type": chunk["chunk_type"],
             "original_chunk": chunk["original_code"],
@@ -294,6 +410,8 @@ class ACHWorkflow:
             "test": new_test_class,
             "scores": scores_dict,
         }
+
+        return result
 
     def _make_fault_for_chunk(
         self,
@@ -331,13 +449,45 @@ class ACHWorkflow:
             diff=diff,
         )
 
+        print(f"\n{'='*60}")
+        print("LLM CALL: Generate Mutant")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+        print(f"Chunk type: {chunk['chunk_type']}")
+        print(f"Original code preview: {chunk['original_code']}")
+
         text = self.llm.invoke(prompt)
-        return self.llm.extract_code_from_response(text)
+
+        print(f"\nLLM Response (length: {len(text)} chars):")
+        print(f"{'-'*60}")
+        print(text)
+        print(f"{'-'*60}\n")
+
+        extracted = self.llm.extract_code_from_response(text)
+        if extracted:
+            print(f"✓ Extracted code (length: {len(extracted)} chars)")
+        else:
+            print(f"✗ Failed to extract code from response")
+
+        return extracted
 
     def _equivalence_detector(self, class_version1, class_version2):
         """Table 1: Equivalence detector"""
         prompt = self.prompts.equivalence_detector(class_version1, class_version2)
+
+        print(f"\n{'='*60}")
+        print("LLM CALL: Equivalence Detection")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
         answer = self.llm.invoke(prompt).strip()
+
+        print(f"\nLLM Response:")
+        print(f"{'-'*60}")
+        print(answer)
+        print(f"{'-'*60}")
+        print(f"Is equivalent: {answer.lower().startswith('yes')}\n")
+
         return answer.lower().startswith("yes")
 
     def _make_test_to_catch_fault(
@@ -347,8 +497,26 @@ class ACHWorkflow:
         prompt = self.prompts.make_test_to_catch_fault(
             original_class, mutated_class, existing_test_class
         )
+
+        print(f"\n{'='*60}")
+        print("LLM CALL: Generate Test to Kill Mutant")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
         text = self.llm.invoke(prompt)
-        return self.llm.extract_code_from_response(text)
+
+        print(f"\nLLM Response (length: {len(text)} chars):")
+        print(f"{'-'*60}")
+        print(text)
+        print(f"{'-'*60}\n")
+
+        extracted = self.llm.extract_code_from_response(text)
+        if extracted:
+            print(f"✓ Extracted test code (length: {len(extracted)} chars)")
+        else:
+            print(f"✗ Failed to extract test code from response")
+
+        return extracted
 
     def _llm_judge_mutant(
         self,
@@ -379,20 +547,32 @@ class ACHWorkflow:
             context=context,
         )
 
+        print(f"\n{'='*60}")
+        print("LLM CALL: Judge Mutant Quality")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
         try:
             response = self.llm.invoke(prompt)
+
+            print(f"\nLLM Response (length: {len(response)} chars):")
+            print(f"{'-'*60}")
             print(response)
+            print(f"{'-'*60}\n")
 
             # Extract JSON from markdown or raw response
             json_str = self.llm.extract_json_from_response(response)
-            return json.loads(json_str)
+            scores = json.loads(json_str)
+
+            print(f"✓ Parsed scores: {scores}\n")
+            return scores
 
         except json.JSONDecodeError as e:
-            print(f"  Error parsing JSON from LLM judge: {e}")
-            print(f"  Response was: {response}")
+            print(f"✗ Error parsing JSON from LLM judge: {e}")
+            print(f"  Response was: {response}\n")
             return None
         except Exception as e:
-            print(f"  Error in LLM judge: {e}")
+            print(f"✗ Error in LLM judge: {e}\n")
             return None
 
     # Legacy methods (for backward compatibility)

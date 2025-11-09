@@ -5,7 +5,7 @@ import os
 import json
 from dotenv import load_dotenv
 from src.ach_workflow import ACHWorkflow
-from constants import MODEL, MODEL_PROVIDER, OUTPUT_DIR
+from constants import MODEL, MODEL_PROVIDER, OUTPUT_DIR, MAX_WORKERS
 import time
 
 load_dotenv()
@@ -13,42 +13,68 @@ load_dotenv()
 
 def main():
     """Run ACH with chunk-based mutation"""
-    if len(sys.argv) < 3:
-        print("Usage: python main.py <CODE_FILE.py> <TEST_FILE.py> [max_workers] [chunker_mode]")
+    if len(sys.argv) < 4:
+        print("Usage: python main.py <repo_path> <code_file> <test_file> [max_workers] [chunker_mode]")
+        print()
+        print("Arguments:")
+        print("  repo_path: Path to repository root (e.g., '.' or '/path/to/repo')")
+        print("  code_file: Code file path (relative to repo or absolute)")
+        print("  test_file: Test file path (relative to repo or absolute)")
         print("  max_workers: optional, number of parallel workers (default: 3)")
         print("  chunker_mode: optional, 'llm' or 'ast' (default: 'llm')")
+        print()
+        print("Examples:")
+        print("  python main.py . src/validators.py tests/test_validators.py")
+        print("  python main.py . examples/simple_example.py examples/simple_example_test.py 5 llm")
+        print("  python main.py /path/to/repo src/file.py tests/test_file.py")
         sys.exit(1)
 
-    code_file = sys.argv[1]
-    test_file = sys.argv[2]
+    repo_path = sys.argv[1]
+    code_file = sys.argv[2]
+    test_file = sys.argv[3]
 
     # Optional: get max_workers from command line or env
-    max_workers = 3  # default
-    if len(sys.argv) > 3:
+    max_workers = MAX_WORKERS  # default
+    if len(sys.argv) > 4:
         try:
-            max_workers = int(sys.argv[3])
+            max_workers = int(sys.argv[4])
         except ValueError:
-            print(f"Warning: Invalid max_workers '{sys.argv[3]}', using default: 3")
-    else:
-        # Allow override from environment variable
-        max_workers = int(os.getenv("MAX_WORKERS", "3"))
+            print(f"Warning: Invalid max_workers '{sys.argv[4]}', using default: 3")
 
     # Optional: get chunker mode from command line or env
     chunker_mode = "llm"  # default
-    if len(sys.argv) > 4:
-        chunker_mode = sys.argv[4].lower()
+    if len(sys.argv) > 5:
+        chunker_mode = sys.argv[5].lower()
         if chunker_mode not in ["llm", "ast"]:
-            print(f"Warning: Invalid chunker_mode '{sys.argv[4]}', using default: 'llm'")
+            print(f"Warning: Invalid chunker_mode '{sys.argv[5]}', using default: 'llm'")
             chunker_mode = "llm"
     else:
         # Allow override from environment variable
         chunker_mode = os.getenv("CHUNKER_MODE", "llm").lower()
 
-    if not os.path.isfile(code_file):
-        print(f"Error: code file not found: {code_file}")
+    # Convert repo_path to absolute
+    repo_path = os.path.abspath(repo_path)
+
+    # Handle both absolute and relative paths for code/test files
+    if os.path.isabs(code_file):
+        code_file_abs = code_file
+    else:
+        code_file_abs = os.path.join(repo_path, code_file)
+
+    if os.path.isabs(test_file):
+        test_file_abs = test_file
+    else:
+        test_file_abs = os.path.join(repo_path, test_file)
+
+    # Validate paths
+    if not os.path.isdir(repo_path):
+        print(f"Error: Repository path not found: {repo_path}")
         sys.exit(2)
-    if not os.path.isfile(test_file):
-        print(f"Error: test file not found: {test_file}")
+    if not os.path.isfile(code_file_abs):
+        print(f"Error: Code file not found: {code_file_abs}")
+        sys.exit(2)
+    if not os.path.isfile(test_file_abs):
+        print(f"Error: Test file not found: {test_file_abs}")
         sys.exit(2)
 
     print(" ACH Workflow Starting")
@@ -59,8 +85,8 @@ def main():
     model = os.getenv("MODEL", MODEL)
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
 
-    ach = ACHWorkflow(model, provider, max_workers=max_workers, chunker_mode=chunker_mode)
-    result = ach.run_workflow(code_file, test_file)
+    ach = ACHWorkflow(repo_path, model, provider, max_workers=max_workers, chunker_mode=chunker_mode)
+    result = ach.run_workflow(code_file_abs, test_file_abs)
 
     if result:
         print("\n" + "=" * 60)
