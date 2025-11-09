@@ -145,5 +145,5 @@ if __name__ == "__main__":
     t1 = time.time()
     main()
     t2 = time.time()
-    print(f"\n\n⏰ Finished in {t2 - t1:.2f} seconds")
+    print(f"\n\nFinished in {t2 - t1:.2f} seconds")
     exit(0)

@@ -106,12 +106,12 @@ class CodeValidator:
                 f.write(mutated_code)
                 f.flush()
                 os.fsync(f.fileno())
-            print(f"    ✓ Code file written successfully")
+            print(f"    Code file written successfully")
 
             # Verify it was written
             if os.path.exists(code_path):
                 actual_size = os.path.getsize(code_path)
-                print(f"    ✓ Verified: file exists, size={actual_size} bytes")
+                print(f"    Verified: file exists, size={actual_size} bytes")
 
             # Replace/add test file in temp repo
             test_path = os.path.join(temp_repo, test_relpath)
@@ -123,23 +123,23 @@ class CodeValidator:
                 f.write(test_code)
                 f.flush()
                 os.fsync(f.fileno())
-            print(f"    ✓ Test file written successfully")
+            print(f"    Test file written successfully")
 
             # Verify it was written
             if os.path.exists(test_path):
                 actual_size = os.path.getsize(test_path)
-                print(f"    ✓ Verified: file exists, size={actual_size} bytes")
+                print(f"    Verified: file exists, size={actual_size} bytes")
                 # Read it back to confirm
                 with open(test_path, 'r', encoding='utf-8') as f:
                     readback = f.read()
                     if readback == test_code:
-                        print(f"    ✓ Verified: content matches what was written")
+                        print(f"    Verified: content matches what was written")
                     else:
-                        print(f"    ✗ WARNING: Content doesn't match!")
+                        print(f"    WARNING: Content doesn't match!")
                         print(f"      Expected length: {len(test_code)}")
                         print(f"      Actual length: {len(readback)}")
             else:
-                print(f"    ✗ WARNING: Test file doesn't exist after writing!")
+                print(f"    WARNING: Test file doesn't exist after writing!")
 
             # Detect test framework
             test_framework = CodeValidator._detect_test_framework(test_code)
@@ -183,14 +183,14 @@ class CodeValidator:
             # Check if tests errored out (import errors, syntax errors, etc.)
             # vs actually running and failing/passing
             if "ImportError" in result.stderr or "ModuleNotFoundError" in result.stderr:
-                print(f"    ✗ Test has import errors - doesn't build properly")
+                print(f"    Test has import errors - doesn't build properly")
                 return False, False
             elif "SyntaxError" in result.stderr or "IndentationError" in result.stderr:
-                print(f"    ✗ Test has syntax errors - doesn't build properly")
+                print(f"    Test has syntax errors - doesn't build properly")
                 return False, False
             elif "ERROR" in result.stderr and "FAILED" not in result.stdout:
                 # Test errored but didn't actually run
-                print(f"    ✗ Test errored without running - doesn't build properly")
+                print(f"    Test errored without running - doesn't build properly")
                 return False, False
 
             # Tests built and ran, return whether they passed

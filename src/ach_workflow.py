@@ -12,6 +12,7 @@ import threading
 import json
 import os
 import constants
+
 class ACHWorkflow:
     def __init__(self, repo_path: str, model: str, provider: str, max_workers: int = 3, chunker_mode: str = "llm"):
         self.repo_path = os.path.abspath(repo_path)
@@ -40,44 +41,6 @@ class ACHWorkflow:
             else:
                 print(message)
 
-    def _save_chunk_output(self, result: Dict, chunk_id: str):
-        """
-        Immediately save mutant and test to outputs folder.
-        Thread-safe with lock to prevent concurrent writes.
-        """
-        try:
-            # Create outputs directory if it doesn't exist
-            os.makedirs(constants.OUTPUT_DIR, exist_ok=True)
-
-            # Sanitize chunk_id for filename
-            safe_chunk_id = chunk_id.replace(".", "_")
-
-            # Save mutant file
-            mutant_path = os.path.join(constants.OUTPUT_DIR, f"mutant_{safe_chunk_id}.py")
-            with open(mutant_path, "w", encoding="utf-8") as f:
-                f.write(result["mutated_file"])
-
-            # Save test file
-            test_path = os.path.join(constants.OUTPUT_DIR, f"test_{safe_chunk_id}.py")
-            with open(test_path, "w", encoding="utf-8") as f:
-                f.write(result["test"])
-
-            # Save metadata for this chunk
-            metadata = {
-                "chunk_id": result["chunk_id"],
-                "chunk_type": result["chunk_type"],
-                "files": {
-                    "mutant": f"mutant_{safe_chunk_id}.py",
-                    "test": f"test_{safe_chunk_id}.py",
-                }
-            }
-            metadata_path = os.path.join(constants.OUTPUT_DIR, f"metadata_{safe_chunk_id}.json")
-            with open(metadata_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=2)
-
-        except Exception as e:
-            self._thread_safe_print(f"⚠ Failed to save output: {e}", chunk_id)
-
     def run_workflow(self, code_file: str, test_file: str) -> Optional[Dict]:
         """Run the ACH workflow with chunk-based mutation"""
         print("Starting ACH Workflow (chunk-based mutation)...")
@@ -100,10 +63,10 @@ class ACHWorkflow:
         print("=" * 60)
         try:
             self.repo_manager.create_master_copy(constants.EXCLUDE_FROM_COPY)
-            print(f"  ✓ Master copy ready with installed dependencies")
-            print(f"  ✓ Using Python: {self.repo_manager.venv_python}")
+            print(f"  Master copy ready with installed dependencies")
+            print(f"  Using Python: {self.repo_manager.venv_python}")
         except Exception as e:
-            print(f"  ✗ Failed to create master copy: {e}")
+            print(f"  Failed to create master copy: {e}")
             return None
 
         # Read input files
@@ -130,16 +93,16 @@ class ACHWorkflow:
         file_data = self.chunker.extract_chunks(code_content, code_file)
 
         if not file_data:
-            print("  ✗ Failed to chunk file")
+            print("  Failed to chunk file")
             return None
 
-        mutable_chunks = self.chunker.get_mutable_chunks(file_data)
+        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:5]
         print(
-            f"  ✓ Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
+            f"  Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
         )
 
         if not mutable_chunks:
-            print("  ✗ No mutable chunks found")
+            print("  No mutable chunks found")
             return None
 
         # Process each mutable chunk in parallel
@@ -174,17 +137,17 @@ class ACHWorkflow:
                     if result:
                         successful_mutants.append(result)
                 except Exception as e:
-                    self._thread_safe_print(f"✗ Exception: {e}", chunk["chunk_id"])
+                    self._thread_safe_print(f"Exception: {e}", chunk["chunk_id"])
 
         # Cleanup worker copies (preserve master copy cache)
         print("\n" + "=" * 60)
         print("CLEANING UP WORKER COPIES")
         print("=" * 60)
         try:
-            self.repo_manager.cleanup_worker_copies()
-            print("  ✓ Worker copies cleaned up (master copy preserved)")
+            self.repo_manager.cleanup_copies()
+            print("  Worker copies cleaned up (master copy preserved)")
         except Exception as e:
-            print(f"  ⚠ Cleanup warning: {e}")
+            print(f"  Cleanup warning: {e}")
 
         # Summary
         print("\n" + "=" * 60)
@@ -228,7 +191,7 @@ class ACHWorkflow:
                 self._worker_copies[worker_id] = temp_repo
                 self._thread_safe_print(f"Created worker copy: {temp_repo}", chunk_id)
             except Exception as e:
-                self._thread_safe_print(f"✗ Failed to create worker copy: {e}", chunk_id)
+                self._thread_safe_print(f"Failed to create worker copy: {e}", chunk_id)
                 return None
 
         temp_repo = self._worker_copies[worker_id]
@@ -244,11 +207,11 @@ class ACHWorkflow:
 
         if result:
             self._thread_safe_print(
-                f"✓ Successfully generated mutant and test", chunk_id
+                f"Successfully generated mutant and test", chunk_id
             )
             return result
         else:
-            self._thread_safe_print(f"✗ Failed to generate valid mutant", chunk_id)
+            self._thread_safe_print(f"Failed to generate valid mutant", chunk_id)
             return None
 
     def _process_chunk(
@@ -270,7 +233,7 @@ class ACHWorkflow:
         )
 
         if not mutated_chunk_code:
-            self._thread_safe_print("  ✗ Failed to generate mutant", chunk_id)
+            self._thread_safe_print("  Failed to generate mutant", chunk_id)
             return None
 
         # Stitch full file with mutated chunk
@@ -285,9 +248,9 @@ class ACHWorkflow:
         if self.validator.is_syntactically_identical(
             chunk["original_code"], mutated_chunk_code
         ):
-            self._thread_safe_print("  ✗ Syntactically identical - DISCARD", chunk_id)
+            self._thread_safe_print("  Syntactically identical - DISCARD", chunk_id)
             return None
-        self._thread_safe_print("  ✓ Syntactically different", chunk_id)
+        self._thread_safe_print("  Syntactically different", chunk_id)
 
         # STEP 3: Validate mutant builds and passes
         self._thread_safe_print("STEP 3: Validate mutant", chunk_id)
@@ -301,23 +264,23 @@ class ACHWorkflow:
         )
 
         if not builds:
-            self._thread_safe_print("  ✗ Mutant doesn't build - DISCARD", chunk_id)
+            self._thread_safe_print("  Mutant doesn't build - DISCARD", chunk_id)
             return None
         if not passes:
             self._thread_safe_print(
-                "  ✗ Mutant fails existing tests - DISCARD", chunk_id
+                "  Mutant fails existing tests - DISCARD", chunk_id
             )
             return None
-        self._thread_safe_print("  ✓ Mutant builds and passes", chunk_id)
+        self._thread_safe_print("  Mutant builds and passes", chunk_id)
 
         # STEP 4: Equivalence detection
         self._thread_safe_print("STEP 4: Equivalence detection", chunk_id)
         is_equivalent = self._equivalence_detector(file_data["full_code"], mutated_file)
 
         if is_equivalent:
-            self._thread_safe_print("  ✗ Equivalent mutant - DISCARD", chunk_id)
+            self._thread_safe_print("  Equivalent mutant - DISCARD", chunk_id)
             return None
-        self._thread_safe_print("  ✓ Non-equivalent", chunk_id)
+        self._thread_safe_print("  Non-equivalent", chunk_id)
 
         # STEP 5: Generate test
         self._thread_safe_print("STEP 5: Generate test to kill mutant", chunk_id)
@@ -326,25 +289,11 @@ class ACHWorkflow:
         )
 
         if not new_test_class:
-            self._thread_safe_print("  ✗ Failed to generate test", chunk_id)
+            self._thread_safe_print("  Failed to generate test", chunk_id)
             return None
 
         # STEP 6: Validate test
         self._thread_safe_print("STEP 6: Validate generated test", chunk_id)
-
-        # Success! Store mutant info
-        temp_result = {
-            "chunk_id": chunk["chunk_id"],
-            "chunk_type": chunk["chunk_type"],
-            "original_chunk": chunk["original_code"],
-            "mutated_chunk": mutated_chunk_code,
-            "mutated_file": mutated_file,
-            "test": new_test_class,
-        }
-
-        # Immediately save to outputs folder
-        self._save_chunk_output(temp_result, chunk_id)
-        
 
         # 6a: Passes on original?
         builds_orig, passes_orig = self.validator.run_tests(
@@ -356,14 +305,11 @@ class ACHWorkflow:
             self.repo_manager.venv_python
         )
         if not builds_orig or not passes_orig:
-            self._thread_safe_print("  ✗ Test fails on original - DISCARD", chunk_id)
+            self._thread_safe_print("  Test fails on original - DISCARD", chunk_id)
             return None
-        self._thread_safe_print("  ✓ Test passes on original", chunk_id)
+        self._thread_safe_print("  Test passes on original", chunk_id)
 
         # 6b: Fails on mutant?
-
-        print(self.test_relpath)
-        
         builds_mut, passes_mut = self.validator.run_tests(
             mutated_file,
             new_test_class,
@@ -374,13 +320,13 @@ class ACHWorkflow:
         )
         if not builds_mut:
             self._thread_safe_print(
-                "  ✗ Test doesn't build with mutant - DISCARD", chunk_id
+                "  Test doesn't build with mutant - DISCARD", chunk_id
             )
             return None
         if passes_mut:
-            self._thread_safe_print("  ✗ Test doesn't kill mutant - DISCARD", chunk_id)
+            self._thread_safe_print("  Test doesn't kill mutant - DISCARD", chunk_id)
             return None
-        self._thread_safe_print("  ✓ Test kills mutant!", chunk_id)
+        self._thread_safe_print("  Test kills mutant!", chunk_id)
 
         # STEP 7: LLM as judge - evaluate mutant quality
         self._thread_safe_print("STEP 7: LLM judge evaluation", chunk_id)
@@ -465,9 +411,9 @@ class ACHWorkflow:
 
         extracted = self.llm.extract_code_from_response(text)
         if extracted:
-            print(f"✓ Extracted code (length: {len(extracted)} chars)")
+            print(f"Extracted code (length: {len(extracted)} chars)")
         else:
-            print(f"✗ Failed to extract code from response")
+            print(f"Failed to extract code from response")
 
         return extracted
 
@@ -512,9 +458,9 @@ class ACHWorkflow:
 
         extracted = self.llm.extract_code_from_response(text)
         if extracted:
-            print(f"✓ Extracted test code (length: {len(extracted)} chars)")
+            print(f"Extracted test code (length: {len(extracted)} chars)")
         else:
-            print(f"✗ Failed to extract test code from response")
+            print(f"Failed to extract test code from response")
 
         return extracted
 
@@ -564,20 +510,13 @@ class ACHWorkflow:
             json_str = self.llm.extract_json_from_response(response)
             scores = json.loads(json_str)
 
-            print(f"✓ Parsed scores: {scores}\n")
+            print(f"Parsed scores: {scores}\n")
             return scores
 
         except json.JSONDecodeError as e:
-            print(f"✗ Error parsing JSON from LLM judge: {e}")
+            print(f"Error parsing JSON from LLM judge: {e}")
             print(f"  Response was: {response}\n")
             return None
         except Exception as e:
-            print(f"✗ Error in LLM judge: {e}\n")
+            print(f"Error in LLM judge: {e}\n")
             return None
-
-    # Legacy methods (for backward compatibility)
-    # def _make_fault(self, context, class_under_test, existing_test_class, diff):
-    #     """Table 1: Make a fault (legacy method for full-file mutation)"""
-    #     prompt = self.prompts.make_fault(context, class_under_test, existing_test_class, diff)
-    #     text = self.llm.invoke(prompt)
-    #     return self.llm.extract_code_from_response(text)

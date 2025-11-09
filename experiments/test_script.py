@@ -110,7 +110,7 @@ class ACHWithExactPrompts:
                     return None
                 continue
             
-            print("   ✓ Mutant builds and passes existing tests")
+            print("   Mutant builds and passes existing tests")
 
             break
         
@@ -123,7 +123,7 @@ class ACHWithExactPrompts:
         if is_equivalent:
             print("    Mutant is equivalent - discarding")
             return None
-        print("   ✓ Mutant is non-equivalent")
+        print("   Mutant is non-equivalent")
         
         # Step 5: Generate test using exact "Make a test to catch fault" prompt
         print("\n" + "="*60)

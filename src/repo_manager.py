@@ -52,10 +52,6 @@ class RepoManager:
         master_dir_name = f"{self.repo_name}_master_{repo_hash}"
         master_dir_path = os.path.join(self.temp_base_dir, master_dir_name)
 
-        # Check if master copy already exists and is valid (has working venv)
-        if os.path.exists(master_dir_path):
-            shutil.rmtree(master_dir_path)
-
         print(f"Creating master copy of repository...")
 
         # Create temp base directory if it doesn't exist
@@ -107,7 +103,7 @@ class RepoManager:
             print(f"  stderr: {result.stderr}")
             raise RuntimeError(f"Failed to create venv: {result.stderr}")
 
-        print(f"  ✓ Venv created successfully")
+        print(f"  Venv created successfully")
 
         # Get Python path from venv (use python, not pip directly)
         python_executable = self._get_venv_python_path(venv_path)
@@ -209,9 +205,9 @@ class RepoManager:
         return temp_dir_path
 
 
-    def cleanup_worker_copies(self) -> None:
+    def cleanup_copies(self) -> None:
         """
-        Remove all worker copies but preserve the master copy (cache).
+        Remove all copies
         """
         if not os.path.exists(self.temp_base_dir):
             return
@@ -219,9 +215,7 @@ class RepoManager:
         # Remove all directories except master copy
         for item in os.listdir(self.temp_base_dir):
             item_path = os.path.join(self.temp_base_dir, item)
-            # Only remove worker copies (not master)
-            if os.path.isdir(item_path) and "_worker_" in item:
-                shutil.rmtree(item_path)
+            shutil.rmtree(item_path)
 
     def get_relative_path(self, file_path: str) -> str:
         """

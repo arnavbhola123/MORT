@@ -60,7 +60,7 @@ class CodeChunker:
                 cached_data = json.load(f)
                 mutable_count = sum(1 for c in cached_data["chunks"] if c["is_mutable"])
                 print(
-                    f"  ✓ Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)"
+                    f"  Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)"
                 )
                 return cached_data
 
@@ -166,7 +166,7 @@ class CodeChunker:
                 )
 
             mutable_count = sum(1 for c in chunks if c["is_mutable"])
-            print(f"  ✓ Extracted {len(chunks)} chunks ({mutable_count} mutable)")
+            print(f"  Extracted {len(chunks)} chunks ({mutable_count} mutable)")
 
             result = {"file_path": file_path, "chunks": chunks, "full_code": code}
 
@@ -218,7 +218,7 @@ class CodeChunker:
                 cached_data = json.load(f)
                 mutable_count = sum(1 for c in cached_data["chunks"] if c["is_mutable"])
                 print(
-                    f"  ✓ Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)"
+                    f"  Loaded {len(cached_data['chunks'])} chunks ({mutable_count} mutable)"
                 )
                 return cached_data
 
@@ -310,7 +310,7 @@ class CodeChunker:
             print(f"  Reconstructed length: {len(reconstructed)}")
         else:
             mutable_count = sum(1 for c in all_chunks_with_gaps if c["is_mutable"])
-            print(f"  ✓ Extracted {len(all_chunks_with_gaps)} chunks ({mutable_count} mutable) using AST")
+            print(f"  Extracted {len(all_chunks_with_gaps)} chunks ({mutable_count} mutable) using AST")
 
         result = {
             "file_path": file_path,
