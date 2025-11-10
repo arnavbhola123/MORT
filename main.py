@@ -128,6 +128,7 @@ def main():
                         "mutant": f"mutant_{m['chunk_id'].replace('.', '_')}.py",
                         "test": f"test_{m['chunk_id'].replace('.', '_')}.py",
                     },
+                    "scores": m["scores"],
                 }
                 for m in result["mutants"]
             ],
