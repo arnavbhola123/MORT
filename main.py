@@ -3,6 +3,7 @@
 import sys
 import os
 import json
+from pathlib import Path
 from dotenv import load_dotenv
 from src.ach_workflow import ACHWorkflow
 from constants import MODEL, MODEL_PROVIDER, OUTPUT_DIR, MAX_WORKERS
@@ -92,52 +93,70 @@ def main():
         print("\n" + "=" * 60)
         print("FINAL RESULTS")
         print("=" * 60)
-        print(f"Successfully generated {result['successful_count']} mutant(s)")
+        print(f"Successfully generated {result['successful_count']} new mutant(s)")
+        print(f"Skipped {result.get('skipped_count', 0)} duplicate(s)")
 
-        # Save results
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        # Create file-specific output folder
+        file_name = Path(code_file_abs).stem
+        output_folder = os.path.join(OUTPUT_DIR, file_name)
+        os.makedirs(output_folder, exist_ok=True)
 
-        # Save each mutant and test
-        for idx, mutant_data in enumerate(result["mutants"]):
+        # Load existing metadata
+        metadata_path = os.path.join(output_folder, "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        else:
+            metadata = {
+                "code_file": code_file_abs,
+                "total_chunks": result["total_chunks"],
+                "mutants": []
+            }
+
+        print("\n" + "=" * 60)
+        print("SAVING RESULTS")
+        print("=" * 60)
+        print(f"Output folder: {output_folder}")
+
+        # Save each new mutant
+        for mutant_data in result["mutants"]:
+            mutant_hash = mutant_data["hash"]
             chunk_id = mutant_data["chunk_id"].replace(".", "_")
+            mutant_filename = f"mutant_{chunk_id}_{mutant_hash}.py"
+            test_filename = f"test_{chunk_id}_{mutant_hash}.py"
 
-            # Save mutated file
-            mutant_path = os.path.join(OUTPUT_DIR, f"mutant_{chunk_id}.py")
+            mutant_path = os.path.join(output_folder, mutant_filename)
             with open(mutant_path, "w", encoding="utf-8") as f:
                 f.write(mutant_data["mutated_file"])
 
-            # Save test
-            test_path = os.path.join(OUTPUT_DIR, f"test_{chunk_id}.py")
+            test_path = os.path.join(output_folder, test_filename)
             with open(test_path, "w", encoding="utf-8") as f:
                 f.write(mutant_data["test"])
 
-            print(f"  [{idx + 1}] {mutant_data['chunk_id']}")
-            print(f"      Mutant: {mutant_path}")
-            print(f"      Test:   {test_path}")
-            print(f"      LLM JUDGE SCORES: {mutant_data['scores']}")
+            # Add to metadata
+            metadata["mutants"].append({
+                "hash": mutant_hash,
+                "chunk_id": mutant_data["chunk_id"],
+                "chunk_type": mutant_data["chunk_type"],
+                "files": {
+                    "mutant": mutant_filename,
+                    "test": test_filename,
+                },
+                "scores": mutant_data.get("scores", {}),
+            })
 
-        # Save metadata
-        metadata = {
-            "total_chunks": result["total_chunks"],
-            "successful_count": result["successful_count"],
-            "mutants": [
-                {
-                    "chunk_id": m["chunk_id"],
-                    "chunk_type": m["chunk_type"],
-                    "files": {
-                        "mutant": f"mutant_{m['chunk_id'].replace('.', '_')}.py",
-                        "test": f"test_{m['chunk_id'].replace('.', '_')}.py",
-                    },
-                    "scores": m["scores"],
-                }
-                for m in result["mutants"]
-            ],
-        }
-        metadata_path = os.path.join(OUTPUT_DIR, "metadata.json")
+            print(f"  [SAVED] {mutant_data['chunk_id']}")
+            print(f"          Mutant: {mutant_filename}")
+            print(f"          Test:   {test_filename}")
+            print(f"          Scores: {mutant_data.get('scores', {})}")
+
+        # Save updated metadata
+        metadata["successful_count"] = len(metadata["mutants"])
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
 
         print(f"\n  Metadata: {metadata_path}")
+        print(f"  Total mutants for this file: {len(metadata['mutants'])}")
     else:
         print("\n Workflow did not produce any valid mutant and test pairs")
 

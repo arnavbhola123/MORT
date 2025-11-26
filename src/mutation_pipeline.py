@@ -3,7 +3,8 @@
 from src.llm_orchestrator import LLMOrchestrator
 from src.validators import CodeValidator
 from src.stitcher import FileStitcher
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, Set
+import hashlib
 
 
 class MutationPipeline:
@@ -32,9 +33,17 @@ class MutationPipeline:
         code_relpath: str,
         test_relpath: str,
         venv_python: str,
+        existing_chunk_ids: Set[str],
     ) -> Optional[Dict]:
         """Process a single chunk through the ACH workflow"""
         chunk_id = chunk["chunk_id"]
+
+        # Check for duplicates BEFORE doing anything expensive
+        if chunk_id in existing_chunk_ids:
+            self._thread_safe_print("DUPLICATE CHECK: Chunk already processed - SKIP", chunk_id)
+            return {"skipped": True, "chunk_id": chunk_id}
+
+        self._thread_safe_print("DUPLICATE CHECK: New chunk, proceeding", chunk_id)
 
         # STEP 1: Generate mutant for chunk
         self._thread_safe_print("STEP 1: Generate mutant for chunk", chunk_id)
@@ -62,7 +71,7 @@ class MutationPipeline:
             return None
         self._thread_safe_print("  Syntactically different", chunk_id)
 
-        # STEP 3: Validate mutant builds and passes
+        # STEP 3: Validate mutant builds and passes (now we know it's not a duplicate)
         self._thread_safe_print("STEP 3: Validate mutant", chunk_id)
         builds, passes = self.validator.run_tests(
             mutated_file,
@@ -159,6 +168,10 @@ class MutationPipeline:
                     "score not found", chunk_id
                 )
 
+        # Compute final hash with test included
+        final_hash_content = f"{chunk_id}|{mutated_chunk_code}|{new_test_class}"
+        final_hash = hashlib.sha256(final_hash_content.encode()).hexdigest()[:12]
+
         # Success! Store mutant info
         result = {
             "chunk_id": chunk["chunk_id"],
@@ -168,6 +181,7 @@ class MutationPipeline:
             "mutated_file": mutated_file,
             "test": new_test_class,
             "scores": scores_dict,
+            "hash": final_hash,
         }
 
         return result

@@ -3,10 +3,12 @@
 from src.parallel_processor import ParallelProcessor
 from src.chunker import CodeChunker
 from src.repo_manager import RepoManager
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 import constants
 import os
+import json
 
 
 class WorkflowOrchestrator:
@@ -37,6 +39,21 @@ class WorkflowOrchestrator:
         print(f"Chunker mode: {self.chunker_mode.upper()}")
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
+
+        # Load existing metadata for deduplication
+        file_name = Path(code_file).stem
+        output_folder = os.path.join(constants.OUTPUT_DIR, file_name)
+        metadata_path = os.path.join(output_folder, "metadata.json")
+
+        existing_chunk_ids = set()
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                    existing_chunk_ids = {m.get("chunk_id") for m in metadata.get("mutants", [])}
+                print(f"Loaded metadata: {len(existing_chunk_ids)} existing mutants found")
+            except Exception as e:
+                print(f"Warning: Could not load metadata: {e}")
 
         # Calculate relative paths from repo root
         code_relpath = self.repo_manager.get_relative_path(code_file)
@@ -85,7 +102,7 @@ class WorkflowOrchestrator:
             print("  Failed to chunk file")
             return None
 
-        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:1]
+        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:10]
         print(
             f"  Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
         )
@@ -96,6 +113,7 @@ class WorkflowOrchestrator:
 
         # Process each mutable chunk in parallel
         successful_mutants = []
+        skipped_count = 0
         total_chunks = len(mutable_chunks)
 
         print(f"\n{'=' * 60}")
@@ -117,6 +135,7 @@ class WorkflowOrchestrator:
                     code_relpath,
                     test_relpath,
                     self.repo_manager.venv_python,
+                    existing_chunk_ids,
                 ): (idx, chunk)
                 for idx, chunk in enumerate(mutable_chunks)
             }
@@ -127,7 +146,10 @@ class WorkflowOrchestrator:
                 try:
                     result = future.result()
                     if result:
-                        successful_mutants.append(result)
+                        if result.get("skipped"):
+                            skipped_count += 1
+                        else:
+                            successful_mutants.append(result)
                 except Exception as e:
                     self._thread_safe_print(f"Exception: {e}", chunk["chunk_id"])
 
@@ -144,7 +166,7 @@ class WorkflowOrchestrator:
         # Summary
         print("\n" + "=" * 60)
         print(
-            f"WORKFLOW COMPLETE: {len(successful_mutants)}/{len(mutable_chunks)} successful mutants"
+            f"WORKFLOW COMPLETE: {len(successful_mutants)} new, {skipped_count} skipped, {len(mutable_chunks)} total chunks"
         )
         print("=" * 60)
 
@@ -154,6 +176,7 @@ class WorkflowOrchestrator:
                 "mutants": successful_mutants,
                 "total_chunks": len(mutable_chunks),
                 "successful_count": len(successful_mutants),
+                "skipped_count": skipped_count,
             }
 
         return None

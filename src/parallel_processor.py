@@ -2,7 +2,7 @@
 
 from src.mutation_pipeline import MutationPipeline
 from src.repo_manager import RepoManager
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, Set
 import threading
 
 
@@ -32,6 +32,7 @@ class ParallelProcessor:
         code_relpath: str,
         test_relpath: str,
         venv_python: str,
+        existing_chunk_ids: Set[str],
     ) -> Optional[Dict]:
         """Process a single chunk with its index (for parallel execution)"""
         chunk_id = chunk["chunk_id"]
@@ -63,12 +64,14 @@ class ParallelProcessor:
             code_relpath,
             test_relpath,
             venv_python,
+            existing_chunk_ids,
         )
 
         if result:
-            self._thread_safe_print(
-                f"Successfully generated mutant and test", chunk_id
-            )
+            if result.get("skipped"):
+                self._thread_safe_print(f"Skipped (already exists)", chunk_id)
+            else:
+                self._thread_safe_print(f"Successfully generated mutant and test", chunk_id)
             return result
         else:
             self._thread_safe_print(f"Failed to generate valid mutant", chunk_id)
