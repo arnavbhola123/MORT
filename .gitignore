@@ -12,3 +12,4 @@ outputs/
 .chunk_cache/
 .temp_testing/
 oracle_outputs/
+!oracle_outputs/.gitkeep
