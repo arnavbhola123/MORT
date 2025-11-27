@@ -102,7 +102,7 @@ class WorkflowOrchestrator:
             print("  Failed to chunk file")
             return None
 
-        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:12]
+        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:3]
         print(
             f"  Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
         )

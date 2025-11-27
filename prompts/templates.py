@@ -222,3 +222,212 @@ Return ONLY valid JSON with no additional text:
     "test_integration_reasoning": "<one sentence>"
 }}
 """
+
+    # ===== Oracle Mode Prompts =====
+
+    @staticmethod
+    def generate_multiple_mutants(context: str, code: str, concern: str, num_mutants: int = 10) -> str:
+        """Generate multiple mutants for oracle inference"""
+        return f"""CONTEXT: {context}
+
+CONCERN: {concern}
+
+INSTRUCTION: Here is a Python code:
+'''{code}'''
+
+Generate {num_mutants} DIFFERENT mutated versions of this code. Each mutant should:
+1. Introduce a SUBTLE bug related to {concern}
+2. Be syntactically different from each other
+3. Still be valid Python code
+4. Be subtle enough that it might pass casual inspection
+
+For each mutant, wrap the mutated code with delimiters:
+// MUTANT START <number>
+<mutated code>
+// MUTANT END <number>
+
+Generate {num_mutants} distinct mutants."""
+
+    @staticmethod
+    def generate_oracle_inference(original_code: str, mutants: list, concern: str) -> str:
+        """Generate oracle specification from analyzing mutants"""
+        mutants_text = "\n\n".join([f"MUTANT {i+1}:\n{m}" for i, m in enumerate(mutants)])
+
+        return f"""I will show you a piece of code and several BUGGY mutated versions of it.
+
+The mutants introduce various bugs related to {concern}.
+
+IMPORTANT: The original code may ALSO contain bugs. Your task is to infer what
+the CORRECT, secure, and privacy-preserving behavior SHOULD BE by analyzing what
+bugs the mutants introduce.
+
+ORIGINAL CODE:
+'''{original_code}'''
+
+BUGGY MUTATED VERSIONS (showing examples of incorrect behavior):
+{mutants_text}
+
+TASK: For each mutant, identify what {concern} property it violates.
+Then specify what the CORRECT behavior should be.
+
+Analysis approach:
+1. For each mutant, ask: "What goes wrong here?"
+2. Identify: "What property/invariant does it violate?"
+3. Specify: "What should correct code do instead?"
+
+Based on this analysis, provide a specification of CORRECT behavior:
+
+1. INVARIANTS - What properties should ALWAYS be true (that the mutants violate)
+2. SAFETY PROPERTIES - What should NEVER happen (that the mutants demonstrate)
+3. INPUT-OUTPUT RELATIONSHIPS - What correct outputs should be (not what buggy code produces)
+4. ERROR CONDITIONS - What errors should be properly handled
+
+Your oracle should specify behavior that would:
+- PASS on correctly implemented code
+- FAIL on the buggy mutants shown above
+- FAIL on the original code if it contains similar bugs
+
+Provide a clear, testable oracle specification."""
+
+    @staticmethod
+    def generate_test_from_oracle(original_code: str, oracle: str, function_name: str, existing_test_file: str = None) -> str:
+        """Generate comprehensive test from oracle specification"""
+
+        # Add existing test context if provided
+        test_context = ""
+        if existing_test_file:
+            test_context = f"""
+EXISTING TEST FILE (for reference - mimic structure, imports, and style):
+```python
+{existing_test_file}
+```
+
+IMPORTANT: Use the same imports, test framework, and coding style as shown above.
+If the existing tests use pytest, use pytest. If they use unittest, use unittest.
+Match the import patterns and helper function styles.
+
+"""
+
+        return f"""You are generating unittest test cases to detect bugs in code based on an oracle specification.
+
+CRITICAL INSTRUCTIONS:
+Your tests must be designed to FAIL on buggy code and PASS on correct code that follows the oracle.
+The original code provided below contains bugs. Your tests must catch these bugs.
+{test_context}
+ORACLE SPECIFICATION (Correct Behavior):
+{oracle}
+
+ORIGINAL CODE TO TEST (Might contain bugs):
+'''{original_code}'''
+
+TASK: Generate a comprehensive Python unittest.TestCase class that will:
+
+1. DETECT VIOLATIONS of the oracle specification
+2. FAIL when run against the buggy original code
+3. PASS when run against corrected code that follows the oracle
+
+ASSERTION GUIDELINES:
+
+For SAFETY PROPERTIES (things that should NEVER happen):
+- Use assertNotIn when something must NOT be present
+- Use assertFalse when something must NOT be true
+- Use assertEqual with expected error messages when requests should be denied
+
+Example from oracle "S3: ssn_hash must NEVER be in response":
+    self.assertNotIn('ssn_hash', result['data'], "SSN hash must never be shared")
+    This will FAIL if ssn_hash IS in the response (catching the bug)
+
+Example from oracle "S6: request_reason must NEVER be logged":
+    log_message = self.system.logger.info.call_args[0][0]
+    self.assertNotIn('reason=', log_message, "Request reason must not be logged")
+    This will FAIL if reason IS logged (catching the bug)
+
+For INVARIANTS (things that must ALWAYS be true):
+- Use assertTrue for required conditions
+- Use assertEqual for specific expected values
+- Use assert_called_once or assert_called_once_with for methods that MUST be invoked
+
+Example from oracle "I3: has_sharing_consent must be checked":
+    self.system.has_sharing_consent.assert_called_once_with(user_id)
+    This will FAIL if has_sharing_consent is NOT called (catching the bug)
+
+Example from oracle "I6: Rate limit must happen BEFORE data access":
+    self.assertEqual(result['error'], 'Rate limit exceeded')
+    self.assertFalse(result['approved'])
+    self.assertIsNone(result['data'])
+    These will FAIL if request is approved despite rate limit (catching the bug)
+
+For INPUT-OUTPUT RELATIONSHIPS:
+- Test that correct inputs produce correct outputs per the oracle
+- Test that invalid inputs produce specified errors
+
+Example from oracle "IO6: Forbidden field should return error":
+    result = system.process_data_access_request(..., requested_fields=['ssn_hash'], ...)
+    self.assertFalse(result['approved'], "Request with forbidden field must be denied")
+    self.assertEqual(result['error'], 'Forbidden field requested')
+    These will FAIL if request is approved (catching the bug)
+
+For ERROR CONDITIONS:
+- Verify that errors are handled as specified in the oracle
+- Check that proper error messages are returned
+
+WHAT NOT TO DO:
+DO NOT write tests that verify buggy behavior exists
+DO NOT use assertIn to verify that bugs are present
+DO NOT write regression tests that document current buggy behavior
+
+Example of WRONG test (documents bug, doesn't catch it):
+    self.assertIn('ssn_hash', result['data'], "BUG: ssn_hash should not be here")
+    This PASSES on buggy code - WRONG!
+
+Example of CORRECT test (catches bug):
+    self.assertNotIn('ssn_hash', result['data'], "SSN hash must never be shared")
+    This FAILS on buggy code - CORRECT!
+
+TEST STRUCTURE REQUIREMENTS:
+
+1. Import all necessary modules:
+   - unittest
+   - unittest.mock (MagicMock, patch, call)
+   - Any other needed imports
+
+2. Create a test class named Test_{function_name}
+
+3. Include setUp method to:
+   - Create test instance with mocked dependencies
+   - Set up test data
+   - Configure default mock behaviors for success case
+   - Use patch for uuid and time if needed for deterministic testing
+
+4. Include tearDown method to:
+   - Clean up mocks
+   - Reset state
+
+5. Write test methods that cover:
+   - Each INVARIANT from the oracle
+   - Each SAFETY PROPERTY from the oracle
+   - Each INPUT-OUTPUT relationship from the oracle
+   - Each ERROR CONDITION from the oracle
+   - Edge cases and boundary conditions
+
+6. Each test method should:
+   - Have a descriptive name indicating what oracle property it tests
+   - Set up specific test conditions
+   - Execute the function under test
+   - Assert expected behavior according to oracle
+   - Use assertion messages that explain what SHOULD happen per the oracle
+
+7. Use mocks appropriately:
+   - Mock external dependencies (logger, database calls, etc.)
+   - Verify mock calls to ensure methods are invoked correctly
+   - Check call order when sequence matters (e.g., rate limit before data access)
+
+8. Make tests comprehensive:
+   - Test positive cases (correct behavior)
+   - Test negative cases (errors handled correctly)
+   - Test boundary conditions
+   - Test that bugs are caught (tests should FAIL on buggy code)
+
+Now generate the complete unittest test class following all these guidelines.
+The tests you generate should FAIL on the buggy original code and PASS on corrected code.
+"""

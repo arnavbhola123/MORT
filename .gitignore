@@ -11,3 +11,4 @@ outputs/
 .zed/
 .chunk_cache/
 .temp_testing/
+oracle_outputs/

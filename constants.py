@@ -31,3 +31,16 @@ EXCLUDE_FROM_COPY = [
 
 # Parallel Processing Configuration
 MAX_WORKERS = 3
+
+# Oracle Mode Configuration
+ORACLE_OUTPUT_DIR = "oracle_outputs"
+NUM_MUTANTS_PER_FUNCTION = 10
+MAX_VALID_MUTANTS = 5
+DEFAULT_CONCERN = "privacy"
+
+CONCERN_CONTEXTS = {
+    "security": "Security vulnerabilities: SQL injection, XSS, authentication bypass, insecure data handling, missing input validation",
+    "privacy": "Privacy violations: logging PII, exposing sensitive data, missing authorization, leaking user information",
+    "performance": "Performance issues: inefficient algorithms, memory leaks, unnecessary computations, poor resource management",
+    "correctness": "Correctness bugs: off-by-one errors, null pointer issues, logic errors, edge case failures"
+}
