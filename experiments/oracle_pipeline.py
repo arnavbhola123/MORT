@@ -16,7 +16,7 @@
 # Provided back to user, user will then generate fixes on their own
 
 # new_main.py
-"""Enhanced ACH CLI with Oracle Inference for Bug Detection"""
+"""Enhanced MORT CLI with Oracle Inference for Bug Detection"""
 import sys
 import os
 from typing import List, Dict, Optional, Tuple
@@ -31,7 +31,7 @@ import json
 load_dotenv()
 
 
-class EnhancedACHWorkflow:
+class EnhancedMORTWorkflow:
     def __init__(self, model: str, provider: str):
         self.llm = LLMClient(model, provider)
         self.validator = CodeValidator()
@@ -422,7 +422,7 @@ The tests you generate should FAIL on the buggy original code and PASS on correc
 
 
 def main():
-    """Enhanced CLI for ACH with Oracle Inference"""
+    """Enhanced CLI for MORT with Oracle Inference"""
     if len(sys.argv) < 2:
         print("Usage: python new_main.py <CODE_FILE.py> [concern]")
         print("\nExamples:")
@@ -441,7 +441,7 @@ def main():
     with open(code_file, 'r', encoding='utf-8') as f:
         original_code = f.read()
     
-    print("Enhanced ACH Workflow with Oracle Inference")
+    print("Enhanced MORT Workflow with Oracle Inference")
     print("="*80)
     print(f"File: {code_file}")
     print(f"Concern: {concern}")
@@ -460,7 +460,7 @@ def main():
     # Initialize workflow
     model = os.getenv("MODEL", MODEL)
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
-    workflow = EnhancedACHWorkflow(model, provider)
+    workflow = EnhancedMORTWorkflow(model, provider)
     
     # Extract functions
     print("\nExtracting functions...")
@@ -575,7 +575,7 @@ def main():
         json.dump(all_results, f, indent=2)
     
     print(f"\nResults saved to: {output_file}")
-    print("\nEnhanced ACH workflow complete!")
+    print("\nEnhanced MORT workflow complete!")
 
 
 if __name__ == "__main__":

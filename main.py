@@ -1,4 +1,4 @@
-"""CLI entry point for ACH - AI-Guided Code Hardening"""
+"""CLI entry point for MORT - Mutation-Guided Oracle Refinement Testing"""
 
 import argparse
 import sys
@@ -6,7 +6,7 @@ import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from src.ach_workflow import ACHWorkflow
+from src.mort_workflow import MORTWorkflow
 from constants import MODEL, MODEL_PROVIDER, OUTPUT_DIR, MAX_WORKERS, ORACLE_OUTPUT_DIR
 import time
 
@@ -16,7 +16,7 @@ load_dotenv()
 def create_parser():
     """Create argument parser with mode selection"""
     parser = argparse.ArgumentParser(
-        description="ACH - AI-Guided Code Hardening with Mutation Testing and Oracle Inference",
+        description="MORT - Mutation-Guided Oracle Refinement Testing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -89,7 +89,7 @@ def validate_args(args):
 
 def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
     """Run mutation testing workflow"""
-    print(" ACH MUTATION TESTING WORKFLOW")
+    print(" MORT MUTATION TESTING WORKFLOW")
     print("-" * 80)
     print(f"Chunker mode: {args.chunker_mode.upper()}")
     print(f"Max workers: {args.max_workers}")
@@ -100,7 +100,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
 
     # Initialize and run mutation workflow
-    ach = ACHWorkflow(
+    mort = MORTWorkflow(
         repo_path,
         model,
         provider,
@@ -108,7 +108,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         chunker_mode=args.chunker_mode,
         mode='mutation'
     )
-    result = ach.run_workflow(code_file_abs, test_file_abs)
+    result = mort.run_workflow(code_file_abs, test_file_abs)
 
     if result:
         print("\n" + "=" * 80)
@@ -184,7 +184,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
 
 def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs=None):
     """Run oracle inference workflow"""
-    print(" ACH ORACLE INFERENCE WORKFLOW")
+    print(" MORT ORACLE INFERENCE WORKFLOW")
     print("-" * 80)
     print(f"Concern: {args.concern.upper()}")
     print(f"Chunker mode: {args.chunker_mode.upper()}")
@@ -197,7 +197,7 @@ def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs=None):
     provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
 
     # Initialize and run oracle workflow
-    ach = ACHWorkflow(
+    mort = MORTWorkflow(
         repo_path,
         model,
         provider,
@@ -205,7 +205,7 @@ def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs=None):
         mode='oracle',
         concern=args.concern
     )
-    result = ach.run_oracle_workflow(code_file_abs, test_file_abs)
+    result = mort.run_oracle_workflow(code_file_abs, test_file_abs)
 
     if result:
         print("\n" + "=" * 80)

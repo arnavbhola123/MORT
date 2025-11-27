@@ -19,8 +19,8 @@ import os
 import constants
 
 
-class ACHWorkflow:
-    """Unified facade for ACH workflows (mutation or oracle)"""
+class MORTWorkflow:
+    """Unified facade for MORT workflows (mutation or oracle)"""
 
     def __init__(
         self,

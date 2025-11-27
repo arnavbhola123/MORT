@@ -1,4 +1,4 @@
-"""Mutation testing pipeline for ACH workflow"""
+"""Mutation testing pipeline for MORT workflow"""
 
 from src.mutation.llm_orchestrator import LLMOrchestrator
 from src.shared.validators import CodeValidator
@@ -35,7 +35,7 @@ class MutationPipeline:
         venv_python: str,
         existing_chunk_ids: Set[str],
     ) -> Optional[Dict]:
-        """Process a single chunk through the ACH workflow"""
+        """Process a single chunk through the MORT workflow"""
         chunk_id = chunk["chunk_id"]
 
         # Check for duplicates BEFORE doing anything expensive

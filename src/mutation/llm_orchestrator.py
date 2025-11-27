@@ -1,4 +1,4 @@
-"""LLM interaction orchestrator for ACH workflow"""
+"""LLM interaction orchestrator for MORT workflow"""
 
 from src.shared.llm_client import LLMClient
 from prompts.templates import PromptTemplates
@@ -7,7 +7,7 @@ import json
 
 
 class LLMOrchestrator:
-    """Handles all LLM interactions for the ACH workflow"""
+    """Handles all LLM interactions for the MORT workflow"""
 
     def __init__(self, llm_client: LLMClient, prompts: PromptTemplates):
         self.llm = llm_client

@@ -1,4 +1,4 @@
-"""Parallel processing manager for ACH workflow"""
+"""Parallel processing manager for MORT workflow"""
 
 from src.mutation.mutation_pipeline import MutationPipeline
 from src.shared.repo_manager import RepoManager

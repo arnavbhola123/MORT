@@ -1,4 +1,4 @@
-"""High-level workflow orchestration for ACH"""
+"""High-level workflow orchestration for MORT"""
 
 from src.mutation.parallel_processor import ParallelProcessor
 from src.shared.chunker import CodeChunker
@@ -12,7 +12,7 @@ import json
 
 
 class WorkflowOrchestrator:
-    """Orchestrates the high-level ACH workflow"""
+    """Orchestrates the high-level MORT workflow"""
 
     def __init__(
         self,
@@ -33,8 +33,8 @@ class WorkflowOrchestrator:
         self.chunker_mode = chunker_mode
 
     def run_workflow(self, code_file: str, test_file: str) -> Optional[Dict]:
-        """Run the ACH workflow with chunk-based mutation"""
-        print("Starting ACH Workflow (chunk-based mutation)...")
+        """Run the MORT workflow with chunk-based mutation"""
+        print("Starting MORT Workflow (chunk-based mutation)...")
         print(f"Using model: {self.model}")
         print(f"Chunker mode: {self.chunker_mode.upper()}")
         print(f"Processing: {code_file}, {test_file}")
