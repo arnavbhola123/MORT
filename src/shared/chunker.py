@@ -6,7 +6,7 @@ import os
 import ast
 import hashlib
 from typing import Dict, List, Optional
-from src.llm_client import LLMClient
+from src.shared.llm_client import LLMClient
 from constants import MODEL, MODEL_PROVIDER
 
 

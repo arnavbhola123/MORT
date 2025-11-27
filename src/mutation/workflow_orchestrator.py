@@ -1,8 +1,8 @@
 """High-level workflow orchestration for ACH"""
 
-from src.parallel_processor import ParallelProcessor
-from src.chunker import CodeChunker
-from src.repo_manager import RepoManager
+from src.mutation.parallel_processor import ParallelProcessor
+from src.shared.chunker import CodeChunker
+from src.shared.repo_manager import RepoManager
 from typing import Dict, Optional, Callable, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -102,7 +102,7 @@ class WorkflowOrchestrator:
             print("  Failed to chunk file")
             return None
 
-        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:10]
+        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:12]
         print(
             f"  Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
         )

@@ -1,7 +1,7 @@
 """Parallel processing manager for ACH workflow"""
 
-from src.mutation_pipeline import MutationPipeline
-from src.repo_manager import RepoManager
+from src.mutation.mutation_pipeline import MutationPipeline
+from src.shared.repo_manager import RepoManager
 from typing import Dict, Optional, Callable, Set
 import threading
 

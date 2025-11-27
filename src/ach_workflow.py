@@ -1,14 +1,14 @@
 """Core workflow implementation"""
 
-from src.llm_client import LLMClient
-from src.validators import CodeValidator
-from src.chunker import CodeChunker
-from src.stitcher import FileStitcher
-from src.repo_manager import RepoManager
-from src.llm_orchestrator import LLMOrchestrator
-from src.mutation_pipeline import MutationPipeline
-from src.parallel_processor import ParallelProcessor
-from src.workflow_orchestrator import WorkflowOrchestrator
+from src.shared.llm_client import LLMClient
+from src.shared.validators import CodeValidator
+from src.shared.chunker import CodeChunker
+from src.mutation.stitcher import FileStitcher
+from src.shared.repo_manager import RepoManager
+from src.mutation.llm_orchestrator import LLMOrchestrator
+from src.mutation.mutation_pipeline import MutationPipeline
+from src.mutation.parallel_processor import ParallelProcessor
+from src.mutation.workflow_orchestrator import WorkflowOrchestrator
 from prompts.templates import PromptTemplates
 from typing import Dict, Optional
 import threading

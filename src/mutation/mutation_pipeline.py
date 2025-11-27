@@ -1,8 +1,8 @@
 """Mutation testing pipeline for ACH workflow"""
 
-from src.llm_orchestrator import LLMOrchestrator
-from src.validators import CodeValidator
-from src.stitcher import FileStitcher
+from src.mutation.llm_orchestrator import LLMOrchestrator
+from src.shared.validators import CodeValidator
+from src.mutation.stitcher import FileStitcher
 from typing import Dict, Optional, Callable, Set
 import hashlib
 

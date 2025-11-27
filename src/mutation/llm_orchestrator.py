@@ -1,6 +1,6 @@
 """LLM interaction orchestrator for ACH workflow"""
 
-from src.llm_client import LLMClient
+from src.shared.llm_client import LLMClient
 from prompts.templates import PromptTemplates
 from typing import Dict, Optional
 import json
