@@ -290,41 +290,37 @@ Your oracle should specify behavior that would:
 Provide a clear, testable oracle specification."""
 
     @staticmethod
-    def generate_test_from_oracle(original_code: str, oracle: str, function_name: str, existing_test_file: str = None) -> str:
-        """Generate comprehensive test from oracle specification"""
+    def generate_test_from_oracle(original_code: str, oracle: str, chunk_id: str, existing_test_file: str) -> str:
+        """Generate extended test from oracle specification by adding to existing test file"""
 
-        # Add existing test context if provided
-        test_context = ""
-        if existing_test_file:
-            test_context = f"""
-EXISTING TEST FILE (for reference - mimic structure, imports, and style):
+        return f"""You are extending an existing test file by adding new test methods to detect bugs based on an oracle specification.
+
+EXISTING TEST FILE (extend this with new test methods):
 ```python
 {existing_test_file}
 ```
 
-IMPORTANT: Use the same imports, test framework, and coding style as shown above.
-If the existing tests use pytest, use pytest. If they use unittest, use unittest.
-Match the import patterns and helper function styles.
-
-"""
-
-        return f"""You are generating unittest test cases to detect bugs in code based on an oracle specification.
-
-CRITICAL INSTRUCTIONS:
-Your tests must be designed to FAIL on buggy code and PASS on correct code that follows the oracle.
-The original code provided below contains bugs. Your tests must catch these bugs.
-{test_context}
-ORACLE SPECIFICATION (Correct Behavior):
+ORACLE SPECIFICATION (Correct Behavior to Verify):
 {oracle}
 
 ORIGINAL CODE TO TEST (Might contain bugs):
-'''{original_code}'''
+```python
+{original_code}
+```
 
-TASK: Generate a comprehensive Python unittest.TestCase class that will:
+TASK: Extend the existing test class by adding new test methods that will:
 
 1. DETECT VIOLATIONS of the oracle specification
 2. FAIL when run against the buggy original code
 3. PASS when run against corrected code that follows the oracle
+4. Follow the SAME structure, imports, and style as the existing test file
+
+CRITICAL REQUIREMENTS:
+- Add test methods to the EXISTING test class structure shown above
+- Use the SAME imports and test framework (pytest or unittest) as the existing tests
+- Match the naming conventions and coding style of existing tests
+- Return the COMPLETE extended test file (existing tests + new tests)
+- Do NOT remove or modify existing test methods
 
 ASSERTION GUIDELINES:
 
@@ -375,6 +371,7 @@ WHAT NOT TO DO:
 DO NOT write tests that verify buggy behavior exists
 DO NOT use assertIn to verify that bugs are present
 DO NOT write regression tests that document current buggy behavior
+DO NOT remove or modify existing test methods
 
 Example of WRONG test (documents bug, doesn't catch it):
     self.assertIn('ssn_hash', result['data'], "BUG: ssn_hash should not be here")
@@ -384,50 +381,38 @@ Example of CORRECT test (catches bug):
     self.assertNotIn('ssn_hash', result['data'], "SSN hash must never be shared")
     This FAILS on buggy code - CORRECT!
 
-TEST STRUCTURE REQUIREMENTS:
+EXTENDING THE EXISTING TEST FILE:
 
-1. Import all necessary modules:
-   - unittest
-   - unittest.mock (MagicMock, patch, call)
-   - Any other needed imports
+1. Keep ALL existing imports, test classes, and test methods unchanged
 
-2. Create a test class named Test_{function_name}
-
-3. Include setUp method to:
-   - Create test instance with mocked dependencies
-   - Set up test data
-   - Configure default mock behaviors for success case
-   - Use patch for uuid and time if needed for deterministic testing
-
-4. Include tearDown method to:
-   - Clean up mocks
-   - Reset state
-
-5. Write test methods that cover:
-   - Each INVARIANT from the oracle
-   - Each SAFETY PROPERTY from the oracle
-   - Each INPUT-OUTPUT relationship from the oracle
-   - Each ERROR CONDITION from the oracle
+2. Add new test methods to the existing test class that verify the oracle specification:
+   - Each INVARIANT from the oracle gets a test method
+   - Each SAFETY PROPERTY from the oracle gets a test method
+   - Each INPUT-OUTPUT relationship from the oracle gets a test method
+   - Each ERROR CONDITION from the oracle gets a test method
    - Edge cases and boundary conditions
 
-6. Each test method should:
+3. Each new test method should:
+   - Follow the naming convention of existing tests
    - Have a descriptive name indicating what oracle property it tests
-   - Set up specific test conditions
+   - Set up test conditions (using setUp patterns from existing tests if present)
    - Execute the function under test
    - Assert expected behavior according to oracle
    - Use assertion messages that explain what SHOULD happen per the oracle
 
-7. Use mocks appropriately:
-   - Mock external dependencies (logger, database calls, etc.)
+4. Use the same mocking patterns as existing tests:
+   - Mock external dependencies consistently
    - Verify mock calls to ensure methods are invoked correctly
-   - Check call order when sequence matters (e.g., rate limit before data access)
+   - Check call order when sequence matters
 
-8. Make tests comprehensive:
-   - Test positive cases (correct behavior)
-   - Test negative cases (errors handled correctly)
-   - Test boundary conditions
-   - Test that bugs are caught (tests should FAIL on buggy code)
+5. Match the style and structure of existing tests:
+   - Same assertion style (self.assertEqual vs self.assert_equal, etc.)
+   - Same mock setup patterns
+   - Same test data creation patterns
+   - Same helper function usage
 
-Now generate the complete unittest test class following all these guidelines.
-The tests you generate should FAIL on the buggy original code and PASS on corrected code.
+Now generate the COMPLETE extended test file following all these guidelines.
+Include ALL existing tests unchanged, plus your new test methods.
+The new tests you add should FAIL on the buggy original code and PASS on corrected code.
+Return the full Python test file.
 """

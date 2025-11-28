@@ -183,7 +183,7 @@ class OraclePipeline:
         return validated_oracle
 
     def generate_test(
-        self, chunk_code: str, oracle: str, chunk_id: str, existing_test_file: str = None
+        self, chunk_code: str, oracle: str, chunk_id: str, existing_test_file: str
     ) -> Optional[str]:
         """
         Step 7: Generate test from validated oracle.
@@ -192,14 +192,18 @@ class OraclePipeline:
             chunk_code: Original code chunk
             oracle: Validated oracle specification
             chunk_id: Identifier for the chunk/function
-            existing_test_file: Optional existing test file content for context
+            existing_test_file: Existing test file content (required)
 
         Returns:
             Generated test code or None if generation failed
         """
-        print(f"\n  Step 7: Generating test from oracle...")
-        if existing_test_file:
-            print(f"    Using existing test file as style reference")
+        print(f"\n  Step 7: Extending existing test file based on oracle...")
+
+        if not existing_test_file:
+            print(f"    ERROR: existing_test_file is required but not provided")
+            return None
+
+        print(f"    Using existing test file as base ({len(existing_test_file)} chars)")
 
         prompt = self.prompts.generate_test_from_oracle(chunk_code, oracle, chunk_id, existing_test_file)
         response = self.llm.invoke(prompt)
@@ -267,7 +271,7 @@ class OraclePipeline:
         code_relpath: str,
         test_relpath: str,
         venv_python: str,
-        existing_test_file: str = None,
+        existing_test_file: str,
     ) -> Optional[Dict]:
         """
         Process a single chunk through the complete 8-step oracle pipeline.
@@ -281,7 +285,7 @@ class OraclePipeline:
             code_relpath: Relative path to code file
             test_relpath: Relative path to test file
             venv_python: Path to Python executable in venv
-            existing_test_file: Optional existing test file content for style reference
+            existing_test_file: Existing test file content (required)
 
         Returns:
             Dictionary with results or None if pipeline failed

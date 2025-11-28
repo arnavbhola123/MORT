@@ -25,8 +25,8 @@ Examples:
   python main.py --mode mutation . src/validators.py tests/test_validators.py --max-workers 5
 
   # Oracle mode
-  python main.py --mode oracle . src/user_service.py --concern privacy
-  python main.py --mode oracle . examples/calculator.py --concern correctness
+  python main.py --mode oracle . src/user_service.py tests/test_user_service.py --concern privacy
+  python main.py --mode oracle . examples/calculator.py tests/test_calculator.py --concern correctness
         """
     )
 
@@ -42,11 +42,11 @@ Examples:
     parser.add_argument('repo_path', help='Repository root path')
     parser.add_argument('code_file', help='Code file path (relative to repo or absolute)')
 
-    # Mutation mode requires test_file
+    # Test file required for both modes
     parser.add_argument(
         'test_file',
-        nargs='?',  # Optional for oracle mode
-        help='Test file path (required for mutation mode, not used in oracle mode)'
+        nargs='?',  # Made optional in argparse but validated in validate_args
+        help='Test file path (required for both mutation and oracle modes)'
     )
 
     # Common options
@@ -83,7 +83,11 @@ def validate_args(args):
     elif args.mode == 'oracle':
         if not args.concern:
             print("Error: --concern is required for oracle mode")
-            print("Usage: python main.py --mode oracle <repo_path> <code_file> --concern {privacy|security|correctness|performance}")
+            print("Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}")
+            sys.exit(1)
+        if not args.test_file:
+            print("Error: test_file is required for oracle mode")
+            print("Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}")
             sys.exit(1)
 
 
@@ -182,14 +186,13 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         print("\n Workflow did not produce any valid mutant and test pairs")
 
 
-def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs=None):
+def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs):
     """Run oracle inference workflow"""
     print(" MORT ORACLE INFERENCE WORKFLOW")
     print("-" * 80)
     print(f"Concern: {args.concern.upper()}")
     print(f"Chunker mode: {args.chunker_mode.upper()}")
-    if test_file_abs:
-        print(f"Test file (for style reference): {test_file_abs}")
+    print(f"Test file: {test_file_abs}")
     print("-" * 80)
 
     # Get model configuration
@@ -248,7 +251,7 @@ def main():
         print(f"Error: Code file not found: {code_file_abs}")
         sys.exit(2)
 
-    # Handle test file based on mode
+    # Handle test file (required for both modes)
     test_file_abs = None
     if args.test_file:
         if os.path.isabs(args.test_file):
@@ -256,17 +259,10 @@ def main():
         else:
             test_file_abs = os.path.join(repo_path, args.test_file)
 
-        # For mutation mode, test file is required and must exist
-        if args.mode == 'mutation':
-            if not os.path.isfile(test_file_abs):
-                print(f"Error: Test file not found: {test_file_abs}")
-                sys.exit(2)
-        # For oracle mode, test file is optional (just for style reference)
-        else:
-            if not os.path.isfile(test_file_abs):
-                print(f"Warning: Test file not found: {test_file_abs}")
-                print("  Proceeding without test file style reference...")
-                test_file_abs = None
+        # Test file must exist for both mutation and oracle modes
+        if not os.path.isfile(test_file_abs):
+            print(f"Error: Test file not found: {test_file_abs}")
+            sys.exit(2)
 
     if args.mode == 'mutation':
         run_mutation_mode(args, repo_path, code_file_abs, test_file_abs)
