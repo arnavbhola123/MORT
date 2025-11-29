@@ -55,7 +55,8 @@ Assume the file structure is as follows:
 Generate mutants and tests that kill them:
 
 ```bash
-python main.py <repo_path> <code_file (relative to repo)> <test_file (relative to repo)>
+# Code file and test file should be relative to the repo path you already specified
+python main.py <repo_path> <code_file> <test_file>
 ```
 
 Example:
@@ -69,7 +70,8 @@ python main.py . src/code.py tests/test.py --max-workers 3 --chunker-mode llm
 Detect bugs in original code via oracle inference:
 
 ```bash
-python main.py --mode oracle <repo_path> <code_file (relative to repo)> <test_file (relative to repo)>--concern <concern>
+# Code file and test file should be relative to the repo path you already specified
+python main.py --mode oracle <repo_path> <code_file> <test_file> --concern <concern>
 ```
 
 Concerns: `privacy`, `security`, `correctness`, `performance`
