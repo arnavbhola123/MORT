@@ -14,17 +14,20 @@ MORT provides two complementary workflows for code analysis:
 ## Setup
 
 1. Create and activate a virtual environment:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 ```
 
 2. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Configure API keys in `.env`:
+
 ```
 GEMINI_API_KEY=your_key
 GOOGLE_API_KEY=your_key
@@ -32,35 +35,49 @@ GOOGLE_API_KEY=your_key
 
 ## Usage
 
+Assume the file structure is as follows:
+
+```
+.
+|  .gitignore
+|  requirements.txt
+|  README.md
+├── src
+│   ├── code.py
+│   └── code2.py
+│
+└── tests
+    └── test.py
+```
+
 ### Mutation Mode
 
 Generate mutants and tests that kill them:
+
 ```bash
-python main.py <repo_path> <code_file> <test_file>
+python main.py <repo_path> <code_file (relative to repo)> <test_file (relative to repo)>
 ```
 
 Example:
+
 ```bash
-python main.py . src/validators.py tests/test_validators.py --max-workers 3 --chunker-mode llm
+python main.py . src/code.py tests/test.py --max-workers 3 --chunker-mode llm
 ```
 
 ### Oracle Mode
 
 Detect bugs in original code via oracle inference:
-```bash
-python main.py --mode oracle <repo_path> <code_file> --concern <concern>
-```
 
-Example:
 ```bash
-python main.py --mode oracle . src/user_service.py --concern privacy
+python main.py --mode oracle <repo_path> <code_file (relative to repo)> <test_file (relative to repo)>--concern <concern>
 ```
 
 Concerns: `privacy`, `security`, `correctness`, `performance`
 
-Optionally provide test file for style reference:
+Example:
+
 ```bash
-python main.py --mode oracle . src/user_service.py tests/test_user_service.py --concern security
+python main.py --mode oracle . src/code.py tests/test.py --concern privacy
 ```
 
 ## Output

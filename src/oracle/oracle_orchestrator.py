@@ -1,13 +1,14 @@
 """High-level orchestration for oracle inference workflow"""
 
+import json
+import os
+from pathlib import Path
+from typing import Callable, Dict, Optional
+
+import constants
 from src.oracle.oracle_pipeline import OraclePipeline
 from src.shared.chunker import CodeChunker
 from src.shared.repo_manager import RepoManager
-from typing import Dict, Optional, Callable
-from pathlib import Path
-import constants
-import os
-import json
 
 
 class OracleOrchestrator:
@@ -29,7 +30,9 @@ class OracleOrchestrator:
         self.model = model
         self.concern = concern
 
-    def run_workflow(self, code_file: str, repo_path: str, test_file: str) -> Optional[Dict]:
+    def run_workflow(
+        self, code_file: str, repo_path: str, test_file: str
+    ) -> Optional[Dict]:
         """
         Execute oracle workflow with full repo context.
 
@@ -98,13 +101,19 @@ class OracleOrchestrator:
         print(f"  Loaded {len(existing_test_content)} chars from test file")
 
         # Context based on concern
-        concern_contexts = constants.CONCERN_CONTEXTS if hasattr(constants, 'CONCERN_CONTEXTS') else {
-            "privacy": "Privacy violations: logging PII, exposing sensitive data, missing authorization, leaking user information",
-            "security": "Security vulnerabilities: SQL injection, XSS, authentication bypass, insecure data handling, missing input validation",
-            "performance": "Performance issues: inefficient algorithms, memory leaks, unnecessary computations, poor resource management",
-            "correctness": "Correctness bugs: off-by-one errors, null pointer issues, logic errors, edge case failures"
-        }
-        context = concern_contexts.get(self.concern, f"Issues related to {self.concern}")
+        concern_contexts = (
+            constants.CONCERN_CONTEXTS
+            if hasattr(constants, "CONCERN_CONTEXTS")
+            else {
+                "privacy": "Privacy violations: logging PII, exposing sensitive data, missing authorization, leaking user information",
+                "security": "Security vulnerabilities: SQL injection, XSS, authentication bypass, insecure data handling, missing input validation",
+                "performance": "Performance issues: inefficient algorithms, memory leaks, unnecessary computations, poor resource management",
+                "correctness": "Correctness bugs: off-by-one errors, null pointer issues, logic errors, edge case failures",
+            }
+        )
+        context = concern_contexts.get(
+            self.concern, f"Issues related to {self.concern}"
+        )
 
         # Chunk the code file
         print("\n" + "=" * 80)
@@ -119,12 +128,13 @@ class OracleOrchestrator:
         # Filter to function-level chunks only (not imports, constants, etc.)
         # For oracle mode, we want functions and methods, not gap chunks
         function_chunks = [
-            chunk for chunk in file_data["chunks"]
-            if chunk.get("chunk_type") in ["function", "method"] and chunk.get("is_mutable", False)
+            chunk for chunk in file_data["chunks"] if chunk.get("is_mutable", True)
         ][:2]
 
         print(f"  Found {len(file_data['chunks'])} chunks")
-        print(f"  {len(function_chunks)} are functions/methods suitable for oracle inference")
+        print(
+            f"  {len(function_chunks)} are functions/methods suitable for oracle inference"
+        )
 
         if not function_chunks:
             print("  No function chunks found for oracle inference")
@@ -176,7 +186,11 @@ class OracleOrchestrator:
         print("=" * 80)
 
         file_name = Path(code_file).stem
-        oracle_output_dir = constants.ORACLE_OUTPUT_DIR if hasattr(constants, 'ORACLE_OUTPUT_DIR') else "oracle_outputs"
+        oracle_output_dir = (
+            constants.ORACLE_OUTPUT_DIR
+            if hasattr(constants, "ORACLE_OUTPUT_DIR")
+            else "oracle_outputs"
+        )
         output_folder = os.path.join(oracle_output_dir, file_name)
         os.makedirs(output_folder, exist_ok=True)
 
@@ -242,8 +256,12 @@ class OracleOrchestrator:
                     f.write(f"ORACLE SPECIFICATION:\n")
                     f.write(result["oracle"] + "\n\n")
                     f.write(f"RECOMMENDATION:\n")
-                    f.write(f"Review the test file: test_{result['chunk_id'].replace('.', '_')}.py\n")
-                    f.write(f"Run the tests to see specific failures and fix the identified {metadata['concern']} violations.\n")
+                    f.write(
+                        f"Review the test file: test_{result['chunk_id'].replace('.', '_')}.py\n"
+                    )
+                    f.write(
+                        f"Run the tests to see specific failures and fix the identified {metadata['concern']} violations.\n"
+                    )
                 elif result["bugs_detected"] is False:
                     f.write(f"STATUS: [✓] NO BUGS DETECTED\n")
                 else:

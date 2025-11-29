@@ -1,13 +1,16 @@
 """Code chunking utilities using LLM or AST"""
 
-import json
-import re
-import os
 import ast
 import hashlib
+import json
+import os
+import re
 from typing import Dict, List, Optional
-from src.shared.llm_client import LLMClient
+
+import json_repair
+
 from constants import MODEL, MODEL_PROVIDER
+from src.shared.llm_client import LLMClient
 
 
 class CodeChunker:
@@ -134,7 +137,7 @@ class CodeChunker:
                     print("Response:", response[:500])
                     return None
 
-            data = json.loads(json_str)
+            data = json_repair.loads(json_str)
 
             # Verify chunks reconstruct the file
             reconstructed = "".join([c["code"] for c in data["chunks"]])
@@ -179,7 +182,7 @@ class CodeChunker:
 
         except json.JSONDecodeError as e:
             print(f"ERROR: Failed to parse LLM JSON response: {e}")
-            print("Response:", response[:500])
+            print("Response:", response)
             return None
         except Exception as e:
             print(f"ERROR: Failed to process LLM response: {e}")
@@ -255,7 +258,7 @@ class CodeChunker:
 
             # If there's a gap before this chunk, create a gap chunk
             if current_line < chunk_start:
-                gap_code = "".join(lines[current_line - 1:chunk_start - 1])
+                gap_code = "".join(lines[current_line - 1 : chunk_start - 1])
                 if gap_code.strip():  # Only create chunk if there's actual code
                     gap_chunk = {
                         "chunk_id": f"gap_{gap_counter}",
@@ -282,7 +285,7 @@ class CodeChunker:
 
         # Handle any remaining code after the last chunk
         if current_line <= len(lines):
-            gap_code = "".join(lines[current_line - 1:])
+            gap_code = "".join(lines[current_line - 1 :])
             if gap_code.strip():
                 gap_chunk = {
                     "chunk_id": f"gap_{gap_counter}",
@@ -310,7 +313,9 @@ class CodeChunker:
             print(f"  Reconstructed length: {len(reconstructed)}")
         else:
             mutable_count = sum(1 for c in all_chunks_with_gaps if c["is_mutable"])
-            print(f"  Extracted {len(all_chunks_with_gaps)} chunks ({mutable_count} mutable) using AST")
+            print(
+                f"  Extracted {len(all_chunks_with_gaps)} chunks ({mutable_count} mutable) using AST"
+            )
 
         result = {
             "file_path": file_path,
@@ -329,14 +334,16 @@ class CodeChunker:
         """Check if a node is at the top level of the module"""
         return node in tree.body
 
-    def _extract_node_chunk(self, node: ast.AST, lines: List[str], file_path: str) -> Optional[Dict]:
+    def _extract_node_chunk(
+        self, node: ast.AST, lines: List[str], file_path: str
+    ) -> Optional[Dict]:
         """Extract a chunk for a function, async function, or class definition"""
         # Get the actual line numbers including decorators
         line_start = node.lineno
         line_end = node.end_lineno
 
         # Include decorators
-        if hasattr(node, 'decorator_list') and node.decorator_list:
+        if hasattr(node, "decorator_list") and node.decorator_list:
             first_decorator_line = min(d.lineno for d in node.decorator_list)
             line_start = first_decorator_line
 
@@ -346,7 +353,7 @@ class CodeChunker:
             line_end += 1
 
         # Extract the code for this node
-        chunk_code = "".join(lines[line_start - 1:line_end])
+        chunk_code = "".join(lines[line_start - 1 : line_end])
 
         # Determine chunk type and mutability
         chunk_type = "unknown"
@@ -366,7 +373,7 @@ class CodeChunker:
 
         # Extract decorators
         decorators = []
-        if hasattr(node, 'decorator_list'):
+        if hasattr(node, "decorator_list"):
             for dec in node.decorator_list:
                 dec_line = lines[dec.lineno - 1].strip()
                 decorators.append(dec_line)
@@ -380,7 +387,7 @@ class CodeChunker:
                 "class_header": None,
                 "line_start": line_start,
                 "line_end": line_end,
-                "indentation": node.col_offset if hasattr(node, 'col_offset') else 0,
+                "indentation": node.col_offset if hasattr(node, "col_offset") else 0,
                 "decorators": decorators,
                 "file_path": file_path,
             },

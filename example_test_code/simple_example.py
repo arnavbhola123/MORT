@@ -15,7 +15,7 @@ class UserValidator:
         Returns:
             True if age is valid, False otherwise
         """
-        if age < self.min_age:
+        if age < 17:
             return False
         if age > self.max_age:
             return False
