@@ -1,14 +1,139 @@
-"""CLI entry point for MORT - Mutation-Guided Oracle Refinement Testing"""
-
 import argparse
-import sys
-import os
 import json
-from pathlib import Path
-from dotenv import load_dotenv
-from src.mort_workflow import MORTWorkflow
-from constants import MODEL, MODEL_PROVIDER, OUTPUT_DIR, MAX_WORKERS, ORACLE_OUTPUT_DIR
+import os
+
+# Deletes temp testing on every run
+import shutil
+import sys
 import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from constants import MAX_WORKERS, MODEL, MODEL_PROVIDER, ORACLE_OUTPUT_DIR, OUTPUT_DIR
+from src.mort_workflow import MORTWorkflow
+
+_temp_testing_dir = os.path.join(os.getcwd(), ".temp_testing")
+try:
+    if os.path.lexists(_temp_testing_dir):
+        if os.path.isdir(_temp_testing_dir) and not os.path.islink(_temp_testing_dir):
+            shutil.rmtree(_temp_testing_dir)
+        else:
+            os.unlink(_temp_testing_dir)
+except Exception as e:
+    print(f"Warning: Failed to remove '.temp_testing': {e}")
+
+
+# Monkey-patch argparse to use interactive prompts instead of CLI flags/positionals
+def _mort_prompt_nonempty(prompt_text):
+    while True:
+        try:
+            val = input(prompt_text).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(130)
+        if val:
+            return val
+        print("Input cannot be empty. Please try again.\n")
+
+
+def _mort_prompt_choice(prompt_text, choices_map):
+    # choices_map: dict of normalized input -> canonical value
+    keys_display = sorted(set(choices_map.values()))
+    while True:
+        try:
+            raw = input(f"{prompt_text} ({'/'.join(keys_display)}): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(130)
+        if not raw:
+            print("Please enter a choice.\n")
+            continue
+        # allow short forms like first letter or numbers (1/2) for common options
+        if raw in choices_map:
+            return choices_map[raw]
+        # try to match exact canonical value
+        for canonical in set(choices_map.values()):
+            if raw == canonical:
+                return canonical
+        print(f"Invalid choice: {raw}. Valid options: {', '.join(keys_display)}\n")
+
+
+def _mort_interactive_parse_args(self, args=None, namespace=None):
+    print("\nMORT Interactive Setup")
+    print("-" * 30)
+
+    mode = _mort_prompt_choice(
+        "Choose workflow mode",
+        {
+            "m": "mutation",
+            "mutation": "mutation",
+            "1": "mutation",
+            "o": "oracle",
+            "oracle": "oracle",
+            "2": "oracle",
+        },
+    )
+
+    repo_path = _mort_prompt_nonempty("Enter repository root path: ")
+    code_file = _mort_prompt_nonempty(
+        "Enter code file path (relative to repo or absolute): "
+    )
+    test_file = _mort_prompt_nonempty(
+        "Enter test file path (relative to repo or absolute): "
+    )
+
+    concern = None
+    if mode == "oracle":
+        concern = _mort_prompt_choice(
+            "Choose concern",
+            {
+                "privacy": "privacy",
+                "security": "security",
+                "correctness": "correctness",
+                "performance": "performance",
+                "p": "privacy",
+                "s": "security",
+                "c": "correctness",
+                "perf": "performance",
+                "1": "privacy",
+                "2": "security",
+                "3": "correctness",
+                "4": "performance",
+            },
+        )
+
+    # Provide defaults for options the original parser would set
+    ns = argparse.Namespace(
+        mode=mode,
+        repo_path=repo_path,
+        code_file=code_file,
+        test_file=test_file,
+        max_workers=4,  # default fallback; original code uses constants.MAX_WORKERS
+        chunker_mode="llm",  # original default
+        concern=concern,
+    )
+    return ns
+
+
+# Apply the patch once
+# Use a module-level guard to avoid setting unknown attributes on ArgumentParser
+try:
+    _MORT_INTERACTIVE_PATCHED  # type: ignore[name-defined]
+except NameError:
+    _MORT_INTERACTIVE_PATCHED = False  # type: ignore[assignment]
+
+if not _MORT_INTERACTIVE_PATCHED:
+    _MORT_INTERACTIVE_PATCHED = True  # type: ignore[assignment]
+    _MORT_ORIGINAL_PARSE_ARGS = argparse.ArgumentParser.parse_args  # type: ignore[assignment]
+
+    def _mort_parse_args_wrapper(self, args=None, namespace=None):
+        # If CLI args are provided, use the original parser; otherwise, launch interactive setup.
+        if args not in (None, []) or len(sys.argv) > 1:
+            return _MORT_ORIGINAL_PARSE_ARGS(self, args, namespace)
+        return _mort_interactive_parse_args(self, args, namespace)
+
+    argparse.ArgumentParser.parse_args = _mort_parse_args_wrapper  # type: ignore[method-assign]
 
 load_dotenv()
 
@@ -27,47 +152,49 @@ Examples:
   # Oracle mode
   python main.py --mode oracle . src/user_service.py tests/test_user_service.py --concern privacy
   python main.py --mode oracle . examples/calculator.py tests/test_calculator.py --concern correctness
-        """
+        """,
     )
 
     # Mode selection (optional, defaults to mutation for backward compatibility)
     parser.add_argument(
-        '--mode',
-        choices=['mutation', 'oracle'],
-        default='mutation',
-        help='Workflow mode (default: mutation)'
+        "--mode",
+        choices=["mutation", "oracle"],
+        default="mutation",
+        help="Workflow mode (default: mutation)",
     )
 
     # Required arguments (common)
-    parser.add_argument('repo_path', help='Repository root path')
-    parser.add_argument('code_file', help='Code file path (relative to repo or absolute)')
+    parser.add_argument("repo_path", help="Repository root path")
+    parser.add_argument(
+        "code_file", help="Code file path (relative to repo or absolute)"
+    )
 
     # Test file required for both modes
     parser.add_argument(
-        'test_file',
-        nargs='?',  # Made optional in argparse but validated in validate_args
-        help='Test file path (required for both mutation and oracle modes)'
+        "test_file",
+        nargs="?",  # Made optional in argparse but validated in validate_args
+        help="Test file path (required for both mutation and oracle modes)",
     )
 
     # Common options
     parser.add_argument(
-        '--max-workers',
+        "--max-workers",
         type=int,
         default=MAX_WORKERS,
-        help=f'Number of parallel workers for mutation mode (default: {MAX_WORKERS})'
+        help=f"Number of parallel workers for mutation mode (default: {MAX_WORKERS})",
     )
     parser.add_argument(
-        '--chunker-mode',
-        choices=['llm', 'ast'],
-        default='llm',
-        help='Chunking strategy (default: llm)'
+        "--chunker-mode",
+        choices=["llm", "ast"],
+        default="llm",
+        help="Chunking strategy (default: llm)",
     )
 
     # Oracle-specific options
     parser.add_argument(
-        '--concern',
-        choices=['privacy', 'security', 'correctness', 'performance'],
-        help='Concern category for oracle mode (required for oracle mode)'
+        "--concern",
+        choices=["privacy", "security", "correctness", "performance"],
+        help="Concern category for oracle mode (required for oracle mode)",
     )
 
     return parser
@@ -75,19 +202,23 @@ Examples:
 
 def validate_args(args):
     """Validate mode-specific requirements"""
-    if args.mode == 'mutation':
+    if args.mode == "mutation":
         if not args.test_file:
             print("Error: test_file is required for mutation mode")
             print("Usage: python main.py <repo_path> <code_file> <test_file>")
             sys.exit(1)
-    elif args.mode == 'oracle':
+    elif args.mode == "oracle":
         if not args.concern:
             print("Error: --concern is required for oracle mode")
-            print("Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}")
+            print(
+                "Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}"
+            )
             sys.exit(1)
         if not args.test_file:
             print("Error: test_file is required for oracle mode")
-            print("Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}")
+            print(
+                "Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}"
+            )
             sys.exit(1)
 
 
@@ -110,7 +241,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         provider,
         max_workers=args.max_workers,
         chunker_mode=args.chunker_mode,
-        mode='mutation'
+        mode="mutation",
     )
     result = mort.run_workflow(code_file_abs, test_file_abs)
 
@@ -135,7 +266,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
             metadata = {
                 "code_file": code_file_abs,
                 "total_chunks": result["total_chunks"],
-                "mutants": []
+                "mutants": [],
             }
 
         print("\n" + "=" * 80)
@@ -159,16 +290,18 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
                 f.write(mutant_data["test"])
 
             # Add to metadata
-            metadata["mutants"].append({
-                "hash": mutant_hash,
-                "chunk_id": mutant_data["chunk_id"],
-                "chunk_type": mutant_data["chunk_type"],
-                "files": {
-                    "mutant": mutant_filename,
-                    "test": test_filename,
-                },
-                "scores": mutant_data.get("scores", {}),
-            })
+            metadata["mutants"].append(
+                {
+                    "hash": mutant_hash,
+                    "chunk_id": mutant_data["chunk_id"],
+                    "chunk_type": mutant_data["chunk_type"],
+                    "files": {
+                        "mutant": mutant_filename,
+                        "test": test_filename,
+                    },
+                    "scores": mutant_data.get("scores", {}),
+                }
+            )
 
             print(f"  [SAVED] {mutant_data['chunk_id']}")
             print(f"          Mutant: {mutant_filename}")
@@ -205,8 +338,8 @@ def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs):
         model,
         provider,
         chunker_mode=args.chunker_mode,
-        mode='oracle',
-        concern=args.concern
+        mode="oracle",
+        concern=args.concern,
     )
     result = mort.run_oracle_workflow(code_file_abs, test_file_abs)
 
@@ -264,7 +397,7 @@ def main():
             print(f"Error: Test file not found: {test_file_abs}")
             sys.exit(2)
 
-    if args.mode == 'mutation':
+    if args.mode == "mutation":
         run_mutation_mode(args, repo_path, code_file_abs, test_file_abs)
     else:
         run_oracle_mode(args, repo_path, code_file_abs, test_file_abs)
