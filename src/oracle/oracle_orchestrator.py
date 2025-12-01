@@ -129,7 +129,7 @@ class OracleOrchestrator:
         # For oracle mode, we want functions and methods, not gap chunks
         function_chunks = [
             chunk for chunk in file_data["chunks"] if chunk.get("is_mutable", True)
-        ][:2]
+        ][1:2]
 
         print(f"  Found {len(file_data['chunks'])} chunks")
         print(

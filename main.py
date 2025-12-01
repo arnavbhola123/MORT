@@ -63,6 +63,29 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
     print("\nMORT Interactive Setup")
     print("-" * 30)
 
+    # Step 1: Repository and file paths
+    repo_path = _mort_prompt_nonempty("Enter repository root path: ")
+    code_file = _mort_prompt_nonempty(
+        "Enter code file path (relative to repo or absolute): "
+    )
+    test_file = _mort_prompt_nonempty(
+        "Enter test file path (relative to repo or absolute): "
+    )
+
+    # Step 2: Chunking strategy
+    chunker_mode = _mort_prompt_choice(
+        "Choose chunking strategy",
+        {
+            "llm": "llm",
+            "ast": "ast",
+            "l": "llm",
+            "a": "ast",
+            "1": "llm",
+            "2": "ast",
+        },
+    )
+
+    # Step 3: Workflow mode
     mode = _mort_prompt_choice(
         "Choose workflow mode",
         {
@@ -75,16 +98,29 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         },
     )
 
-    repo_path = _mort_prompt_nonempty("Enter repository root path: ")
-    code_file = _mort_prompt_nonempty(
-        "Enter code file path (relative to repo or absolute): "
-    )
-    test_file = _mort_prompt_nonempty(
-        "Enter test file path (relative to repo or absolute): "
-    )
-
+    # Step 4: Mode-specific options
+    max_workers = MAX_WORKERS  # default
     concern = None
-    if mode == "oracle":
+
+    if mode == "mutation":
+        # Ask for number of workers
+        while True:
+            try:
+                workers_input = input(f"Enter number of workers (default {MAX_WORKERS}): ").strip()
+                if not workers_input:
+                    max_workers = MAX_WORKERS
+                    break
+                max_workers = int(workers_input)
+                if max_workers < 1:
+                    print("Number of workers must be at least 1. Please try again.\n")
+                    continue
+                break
+            except ValueError:
+                print("Invalid input. Please enter a valid integer.\n")
+            except (EOFError, KeyboardInterrupt):
+                print("\nAborted.")
+                sys.exit(130)
+    elif mode == "oracle":
         concern = _mort_prompt_choice(
             "Choose concern",
             {
@@ -109,8 +145,8 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         repo_path=repo_path,
         code_file=code_file,
         test_file=test_file,
-        max_workers=4,  # default fallback; original code uses constants.MAX_WORKERS
-        chunker_mode="llm",  # original default
+        max_workers=max_workers,
+        chunker_mode=chunker_mode,
         concern=concern,
     )
     return ns
