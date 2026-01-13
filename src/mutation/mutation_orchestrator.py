@@ -11,7 +11,7 @@ import os
 import json
 
 
-class WorkflowOrchestrator:
+class MutationOrchestrator:
     """Orchestrates the high-level MORT workflow"""
 
     def __init__(

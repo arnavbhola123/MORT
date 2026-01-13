@@ -87,7 +87,6 @@ class CodeValidator:
 
         Returns: (builds: bool, passes: bool)
         """
-        print("in run tests")
         # Syntax check first
         is_valid, error = CodeValidator.validate_syntax(mutated_code)
         if not is_valid:
@@ -176,7 +175,7 @@ class CodeValidator:
             print(f"    Test framework: {test_framework}")
             print(f"    Test return code: {result.returncode}")
             print(f"    Test result: {'PASSED' if passed else 'FAILED'}")
-            print(f"    Test output:\n{result.stdout}")
+            print(f"    Test output (first 100 chars):\n{result.stdout[:100]}")
             if result.stderr:
                 print(f"    Test errors:\n{result.stderr}")
 

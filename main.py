@@ -345,6 +345,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
             print(f"          Scores: {mutant_data.get('scores', {})}")
 
         # Save updated metadata
+        metadata['total_chunks'] = result['total_chunks']
         metadata["successful_count"] = len(metadata["mutants"])
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)

@@ -8,7 +8,7 @@ from src.shared.repo_manager import RepoManager
 from src.mutation.llm_orchestrator import LLMOrchestrator
 from src.mutation.mutation_pipeline import MutationPipeline
 from src.mutation.parallel_processor import ParallelProcessor
-from src.mutation.workflow_orchestrator import WorkflowOrchestrator
+from src.mutation.mutation_orchestrator import MutationOrchestrator
 from src.oracle.oracle_validator import OracleValidator
 from src.oracle.oracle_pipeline import OraclePipeline
 from src.oracle.oracle_orchestrator import OracleOrchestrator
@@ -57,7 +57,7 @@ class MORTWorkflow:
             parallel_processor = ParallelProcessor(
                 mutation_pipeline, repo_manager, self._thread_safe_print
             )
-            self.workflow_orchestrator = WorkflowOrchestrator(
+            self.workflow_orchestrator = MutationOrchestrator(
                 parallel_processor,
                 chunker,
                 repo_manager,

@@ -84,7 +84,7 @@ class LLMOrchestrator:
 
         print(f"\nLLM Response:")
         print(f"{'-'*60}")
-        print(answer)
+        print(answer[:100])
         print(f"{'-'*60}")
         print(f"Is equivalent: {answer.lower().startswith('yes')}\n")
 
@@ -107,7 +107,7 @@ class LLMOrchestrator:
 
         print(f"\nLLM Response (length: {len(text)} chars):")
         print(f"{'-'*60}")
-        print(text)
+        print(text[:100])
         print(f"{'-'*60}\n")
 
         extracted = self.llm.extract_code_from_response(text)
@@ -159,7 +159,7 @@ class LLMOrchestrator:
 
             print(f"\nLLM Response (length: {len(response)} chars):")
             print(f"{'-'*60}")
-            print(response)
+            print(response[:100])
             print(f"{'-'*60}\n")
 
             # Extract JSON from markdown or raw response
