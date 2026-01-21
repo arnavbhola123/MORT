@@ -20,6 +20,7 @@ class LLMOrchestrator:
         file_data: Dict,
         existing_test_class: str,
         diff: str,
+        concern: str = "privacy",
     ) -> Optional[str]:
         """Generate fault for a specific code chunk"""
         # Get full class context if this is a method
@@ -47,6 +48,7 @@ class LLMOrchestrator:
             full_class_context=full_class_context,
             existing_test_class=existing_test_class,
             diff=diff,
+            concern=concern,
         )
 
         print(f"\n{'='*60}")
@@ -126,6 +128,7 @@ class LLMOrchestrator:
         new_test: str,
         context: str,
         diff: str,
+        concern: str = "privacy",
     ) -> Optional[Dict]:
         """
         LLM as judge - evaluates the quality and relevance of the generated mutant.
@@ -136,6 +139,7 @@ class LLMOrchestrator:
             original_test: The existing test suite
             new_test: The newly generated test
             context: The context about the concern (e.g., privacy violations)
+            concern: The type of concern (privacy, security, correctness, performance)
 
         Returns:
             Dictionary of scores, or None if evaluation fails
@@ -146,7 +150,8 @@ class LLMOrchestrator:
             original_test=original_test,
             new_test=new_test,
             context=context,
-            diff=diff
+            diff=diff,
+            concern=concern,
         )
 
         print(f"\n{'='*60}")

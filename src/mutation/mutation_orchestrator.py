@@ -23,6 +23,7 @@ class MutationOrchestrator:
         thread_safe_print: Callable,
         model: str,
         chunker_mode: str,
+        concern: str = None,
     ):
         self.parallel_processor = parallel_processor
         self.chunker = chunker
@@ -31,11 +32,13 @@ class MutationOrchestrator:
         self._thread_safe_print = thread_safe_print
         self.model = model
         self.chunker_mode = chunker_mode
+        self.concern = concern or constants.DEFAULT_CONCERN
 
     def run_workflow(self, code_file: str, test_file: str) -> Optional[Dict]:
         """Run the MORT workflow with chunk-based mutation"""
         print("Starting MORT Workflow (chunk-based mutation)...")
         print(f"Using model: {self.model}")
+        print(f"Concern: {self.concern.upper()}")
         print(f"Chunker mode: {self.chunker_mode.upper()}")
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
@@ -81,16 +84,13 @@ class MutationOrchestrator:
         with open(test_file, "r", encoding="utf-8") as f:
             existing_test_class = f.read()
 
-        # Context about privacy concerns
-        context_about_concern = """Privacy violations in user data handling:
-        - Logging personally identifiable information (emails, names, IDs) without sanitization
-        - Exposing password hashes, salts, or authentication tokens in responses
-        - Missing authorization checks allowing unauthorized data access
-        - Storing sensitive data unencrypted or in application logs"""
-
-        diff = """Real bug example: User profile endpoint returned
-        password_hash and salt_hex fields in JSON response, exposing sensitive
-        authentication data. Fix removed these fields from public() method."""
+        # Get concern-specific context and diff example
+        context_about_concern = constants.CONCERN_CONTEXTS.get(
+            self.concern, f"Issues related to {self.concern}"
+        )
+        diff = constants.CONCERN_DIFFS.get(
+            self.concern, f"Real bug example related to {self.concern}"
+        )
 
         # STEP 0: Chunk the code file
         print("\n" + "=" * 60)
@@ -137,6 +137,7 @@ class MutationOrchestrator:
                     test_relpath,
                     self.repo_manager.venv_python,
                     existing_chunk_ids,
+                    self.concern,
                 ): (idx, chunk)
                 for idx, chunk in enumerate(mutable_chunks)
             }

@@ -33,6 +33,7 @@ class ParallelProcessor:
         test_relpath: str,
         venv_python: str,
         existing_chunk_ids: Set[str],
+        concern: str = "privacy",
     ) -> Optional[Dict]:
         """Process a single chunk with its index (for parallel execution)"""
         chunk_id = chunk["chunk_id"]
@@ -65,6 +66,7 @@ class ParallelProcessor:
             test_relpath,
             venv_python,
             existing_chunk_ids,
+            concern,
         )
 
         if result:

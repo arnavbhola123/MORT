@@ -65,6 +65,7 @@ class MORTWorkflow:
                 self._thread_safe_print,
                 llm.model,
                 self.chunker_mode,
+                self.concern,
             )
             self.oracle_orchestrator = None
 

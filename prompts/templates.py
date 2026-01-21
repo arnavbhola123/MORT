@@ -8,6 +8,7 @@ class PromptTemplates:
         full_class_context: str,
         existing_test_class: str,
         diff: str,
+        concern: str = "privacy",
     ) -> str:
         """Generate fault for a specific code chunk (method/function)"""
 
@@ -32,7 +33,7 @@ CODE TO MUTATE:
 EXISTING TESTS:
 '''{existing_test_class}'''
 
-INSTRUCTION: Write a mutated version of the code above that introduces a SUBTLE bug representing a privacy violation similar to: {diff}
+INSTRUCTION: Write a mutated version of the code above that introduces a SUBTLE bug representing a {concern} issue similar to: {diff}
 
 Requirements:
 1. The bug should be SUBTLE enough that all existing tests still pass
@@ -77,13 +78,14 @@ Write an extended version of the test class that adds exactly one test case to c
         original_test: str,
         new_test: str,
         context: str,
-        diff: str
+        diff: str,
+        concern: str = "privacy",
     ) -> str:
         """Prompt for LLM to judge mutant quality"""
         return f"""
-You are an expert security and testing reviewer evaluating AI-generated mutations and tests for privacy/business-logic concerns.
+You are an expert security and testing reviewer evaluating AI-generated mutations and tests for {concern}/business-logic concerns.
 
-PRIVACY CONCERN CONTEXT:
+{concern.upper()} CONCERN CONTEXT:
 {context}
 
 TARGET VIOLATION PATTERN:

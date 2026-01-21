@@ -120,6 +120,25 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
             except (EOFError, KeyboardInterrupt):
                 print("\nAborted.")
                 sys.exit(130)
+        # Ask for concern (optional, defaults to privacy)
+        concern = _mort_prompt_choice(
+            "Choose concern (default: privacy)",
+            {
+                "privacy": "privacy",
+                "security": "security",
+                "correctness": "correctness",
+                "performance": "performance",
+                "p": "privacy",
+                "s": "security",
+                "c": "correctness",
+                "perf": "performance",
+                "1": "privacy",
+                "2": "security",
+                "3": "correctness",
+                "4": "performance",
+                "": "privacy",  # Allow empty input to default to privacy
+            },
+        )
     elif mode == "oracle":
         concern = _mort_prompt_choice(
             "Choose concern",
@@ -226,11 +245,11 @@ Examples:
         help="Chunking strategy (default: llm)",
     )
 
-    # Oracle-specific options
+    # Concern option (required for oracle, optional for mutation)
     parser.add_argument(
         "--concern",
         choices=["privacy", "security", "correctness", "performance"],
-        help="Concern category for oracle mode (required for oracle mode)",
+        help="Concern category (required for oracle mode, optional for mutation mode - defaults to privacy)",
     )
 
     return parser
@@ -260,8 +279,12 @@ def validate_args(args):
 
 def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
     """Run mutation testing workflow"""
+    # Default concern to privacy if not specified
+    concern = args.concern or "privacy"
+
     print(" MORT MUTATION TESTING WORKFLOW")
     print("-" * 80)
+    print(f"Concern: {concern.upper()}")
     print(f"Chunker mode: {args.chunker_mode.upper()}")
     print(f"Max workers: {args.max_workers}")
     print("-" * 80)
@@ -278,6 +301,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         max_workers=args.max_workers,
         chunker_mode=args.chunker_mode,
         mode="mutation",
+        concern=concern,
     )
     result = mort.run_workflow(code_file_abs, test_file_abs)
 

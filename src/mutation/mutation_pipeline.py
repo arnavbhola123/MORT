@@ -34,6 +34,7 @@ class MutationPipeline:
         test_relpath: str,
         venv_python: str,
         existing_chunk_ids: Set[str],
+        concern: str = "privacy",
     ) -> Optional[Dict]:
         """Process a single chunk through the MORT workflow"""
         chunk_id = chunk["chunk_id"]
@@ -48,7 +49,7 @@ class MutationPipeline:
         # STEP 1: Generate mutant for chunk
         self._thread_safe_print("STEP 1: Generate mutant for chunk", chunk_id)
         mutated_chunk_code = self.llm_orchestrator.make_fault_for_chunk(
-            context, chunk, file_data, existing_test_class, diff
+            context, chunk, file_data, existing_test_class, diff, concern
         )
 
         if not mutated_chunk_code:
@@ -157,7 +158,8 @@ class MutationPipeline:
             original_test=existing_test_class,
             new_test=new_test_class,
             context=context,
-            diff=diff
+            diff=diff,
+            concern=concern,
         )
 
         for score in scores_dict.keys():

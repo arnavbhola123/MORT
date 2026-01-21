@@ -127,6 +127,7 @@ class OracleOrchestrator:
 
         # Filter to function-level chunks only (not imports, constants, etc.)
         # For oracle mode, we want functions and methods, not gap chunks
+        # TODO: REMOVE LIMITATION AFTER TESTING
         function_chunks = [
             chunk for chunk in file_data["chunks"] if chunk.get("is_mutable", True)
         ][1:2]

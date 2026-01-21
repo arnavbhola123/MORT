@@ -44,3 +44,14 @@ CONCERN_CONTEXTS = {
     "performance": "Performance issues: inefficient algorithms, memory leaks, unnecessary computations, poor resource management",
     "correctness": "Correctness bugs: off-by-one errors, null pointer issues, logic errors, edge case failures"
 }
+
+CONCERN_DIFFS = {
+    "privacy": """Real bug example: User profile endpoint returned password_hash and salt_hex fields
+in JSON response, exposing sensitive authentication data. Fix removed these fields from public() method.""",
+    "security": """Real bug example: SQL query used string concatenation instead of parameterized queries,
+allowing SQL injection via user input. Fix replaced f-string with cursor.execute(query, params).""",
+    "correctness": """Real bug example: Loop used < instead of <= causing off-by-one error that skipped
+the last element in the array. Fix changed range(len(arr)-1) to range(len(arr)).""",
+    "performance": """Real bug example: Function called database query inside a loop, causing N+1 query
+problem. Fix moved query outside loop and used batch fetching with a single query."""
+}
