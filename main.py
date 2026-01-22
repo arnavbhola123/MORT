@@ -312,9 +312,9 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         print(f"Successfully generated {result['successful_count']} new mutant(s)")
         print(f"Skipped {result.get('skipped_count', 0)} duplicate(s)")
 
-        # Create file-specific output folder
+        # Create file/concern output folder structure
         file_name = Path(code_file_abs).stem
-        output_folder = os.path.join(OUTPUT_DIR, file_name)
+        output_folder = os.path.join(OUTPUT_DIR, file_name, concern)
         os.makedirs(output_folder, exist_ok=True)
 
         # Load existing metadata

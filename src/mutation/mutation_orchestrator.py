@@ -43,9 +43,9 @@ class MutationOrchestrator:
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
 
-        # Load existing metadata for deduplication
+        # Load existing metadata for deduplication (file/concern folder structure)
         file_name = Path(code_file).stem
-        output_folder = os.path.join(constants.OUTPUT_DIR, file_name)
+        output_folder = os.path.join(constants.OUTPUT_DIR, file_name, self.concern)
         metadata_path = os.path.join(output_folder, "metadata.json")
 
         existing_chunk_ids = set()
