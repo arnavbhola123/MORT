@@ -63,8 +63,40 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
     print("\nMORT Interactive Setup")
     print("-" * 30)
 
-    # Step 1: Repository and file paths
+    # Step 1: Workflow mode (ask first so we can skip irrelevant prompts)
+    mode = _mort_prompt_choice(
+        "Choose workflow mode",
+        {
+            "m": "mutation",
+            "mutation": "mutation",
+            "1": "mutation",
+            "o": "oracle",
+            "oracle": "oracle",
+            "2": "oracle",
+            "i": "index",
+            "index": "index",
+            "3": "index",
+        },
+    )
+
+    # Step 2: Repository path (always needed)
     repo_path = _mort_prompt_nonempty("Enter repository root path: ")
+
+    # Index mode only needs repo_path
+    if mode == "index":
+        ns = argparse.Namespace(
+            mode=mode,
+            repo_path=repo_path,
+            code_file=None,
+            test_file=None,
+            max_workers=MAX_WORKERS,
+            chunker_mode="llm",
+            concern=None,
+            index_output=None,
+        )
+        return ns
+
+    # Step 3: File paths (mutation and oracle modes)
     code_file = _mort_prompt_nonempty(
         "Enter code file path (relative to repo or absolute): "
     )
@@ -72,7 +104,7 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         "Enter test file path (relative to repo or absolute): "
     )
 
-    # Step 2: Chunking strategy
+    # Step 4: Chunking strategy
     chunker_mode = _mort_prompt_choice(
         "Choose chunking strategy",
         {
@@ -85,20 +117,7 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         },
     )
 
-    # Step 3: Workflow mode
-    mode = _mort_prompt_choice(
-        "Choose workflow mode",
-        {
-            "m": "mutation",
-            "mutation": "mutation",
-            "1": "mutation",
-            "o": "oracle",
-            "oracle": "oracle",
-            "2": "oracle",
-        },
-    )
-
-    # Step 4: Mode-specific options
+    # Step 5: Mode-specific options
     max_workers = MAX_WORKERS  # default
     concern = None
 
@@ -167,6 +186,7 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         max_workers=max_workers,
         chunker_mode=chunker_mode,
         concern=concern,
+        index_output=None,
     )
     return ns
 
@@ -213,7 +233,7 @@ Examples:
     # Mode selection (optional, defaults to mutation for backward compatibility)
     parser.add_argument(
         "--mode",
-        choices=["mutation", "oracle"],
+        choices=["mutation", "oracle", "index"],
         default="mutation",
         help="Workflow mode (default: mutation)",
     )
@@ -221,7 +241,7 @@ Examples:
     # Required arguments (common)
     parser.add_argument("repo_path", help="Repository root path")
     parser.add_argument(
-        "code_file", help="Code file path (relative to repo or absolute)"
+        "code_file", nargs="?", help="Code file path (relative to repo or absolute)"
     )
 
     # Test file required for both modes
@@ -252,17 +272,40 @@ Examples:
         help="Concern category (required for oracle mode, optional for mutation mode - defaults to privacy)",
     )
 
+    # Indexer options
+    parser.add_argument(
+        "--index-output",
+        default=None,
+        help="Output path for index JSON file (default: codebase_index.json in repo root)",
+    )
+    parser.add_argument(
+        "--skip-summaries",
+        action="store_true",
+        default=False,
+        help="Skip LLM-generated module summaries during indexing",
+    )
+
     return parser
 
 
 def validate_args(args):
     """Validate mode-specific requirements"""
     if args.mode == "mutation":
+        if not args.code_file:
+            print("Error: code_file is required for mutation mode")
+            print("Usage: python main.py <repo_path> <code_file> <test_file>")
+            sys.exit(1)
         if not args.test_file:
             print("Error: test_file is required for mutation mode")
             print("Usage: python main.py <repo_path> <code_file> <test_file>")
             sys.exit(1)
     elif args.mode == "oracle":
+        if not args.code_file:
+            print("Error: code_file is required for oracle mode")
+            print(
+                "Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}"
+            )
+            sys.exit(1)
         if not args.concern:
             print("Error: --concern is required for oracle mode")
             print(
@@ -275,6 +318,8 @@ def validate_args(args):
                 "Usage: python main.py --mode oracle <repo_path> <code_file> <test_file> --concern {privacy|security|correctness|performance}"
             )
             sys.exit(1)
+    elif args.mode == "index":
+        pass  # Index mode only needs repo_path
 
 
 def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
@@ -420,6 +465,42 @@ def run_oracle_mode(args, repo_path, code_file_abs, test_file_abs):
         print("\n Oracle workflow failed or produced no results")
 
 
+def run_index_mode(args, repo_path):
+    """Run codebase indexing workflow"""
+    print("MORT CODEBASE INDEXER")
+    print("-" * 80)
+    print(f"Repository: {repo_path}")
+    print("-" * 80)
+
+    # Get model configuration
+    model = os.getenv("MODEL", MODEL)
+    provider = os.getenv("MODEL_PROVIDER", MODEL_PROVIDER)
+
+    from src.shared.llm_client import LLMClient
+    from src.indexer.indexer import CodebaseIndexer
+
+    skip_summaries = getattr(args, "skip_summaries", False)
+    llm = None if skip_summaries else LLMClient(model, provider)
+    indexer = CodebaseIndexer(repo_path, llm)
+    index = indexer.index(
+        output_path=getattr(args, "index_output", None),
+        skip_summaries=skip_summaries,
+    )
+
+    if index:
+        print("\n" + "=" * 80)
+        print("INDEXING COMPLETE")
+        print("=" * 80)
+        print(f"Files indexed: {index['python_files_count']}")
+        print(f"Functions found: {len(index['functions'])}")
+        print(f"Call graph edges: {len(index['call_graph'])}")
+        print(f"Module summaries: {len(index['module_summaries'])}")
+        if index["errors"]:
+            print(f"Errors: {len(index['errors'])}")
+    else:
+        print("\nIndexing failed")
+
+
 def main():
     """Main entry point"""
     parser = create_parser()
@@ -431,16 +512,22 @@ def main():
     # Convert repo_path to absolute
     repo_path = os.path.abspath(args.repo_path)
 
+    # Validate repo path
+    if not os.path.isdir(repo_path):
+        print(f"Error: Repository path not found: {repo_path}")
+        sys.exit(2)
+
+    # Index mode only needs repo_path
+    if args.mode == "index":
+        run_index_mode(args, repo_path)
+        return
+
     # Handle both absolute and relative paths for code file
     if os.path.isabs(args.code_file):
         code_file_abs = args.code_file
     else:
         code_file_abs = os.path.join(repo_path, args.code_file)
 
-    # Validate paths
-    if not os.path.isdir(repo_path):
-        print(f"Error: Repository path not found: {repo_path}")
-        sys.exit(2)
     if not os.path.isfile(code_file_abs):
         print(f"Error: Code file not found: {code_file_abs}")
         sys.exit(2)

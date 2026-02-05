@@ -418,3 +418,17 @@ Include ALL existing tests unchanged, plus your new test methods.
 The new tests you add should FAIL on the buggy original code and PASS on corrected code.
 Return the full Python test file.
 """
+
+    # ===== Indexer Prompts =====
+
+    @staticmethod
+    def module_summary(file_path: str, source_code: str) -> str:
+        """Generate a one-paragraph summary of a Python module"""
+        return f"""Analyze the following Python module and provide a ONE PARAGRAPH summary describing its purpose, main responsibilities, and key classes or functions it contains.
+
+FILE PATH: {file_path}
+
+SOURCE CODE:
+'''{source_code}'''
+
+Provide ONLY the summary paragraph, no headers or bullet points."""

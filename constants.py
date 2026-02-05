@@ -45,6 +45,22 @@ CONCERN_CONTEXTS = {
     "correctness": "Correctness bugs: off-by-one errors, null pointer issues, logic errors, edge case failures"
 }
 
+# Indexer Configuration
+INDEXER_OUTPUT_FILE = "codebase_index.json"
+INDEXER_MAX_SOURCE_CHARS = 4000
+INDEXER_EXCLUDE_PATTERNS = [
+    "test_", "_test.py", "tests/", "test/",
+    ".git", "__pycache__", ".pytest_cache",
+    ".venv", "venv", "env", "node_modules",
+    ".DS_Store", ".egg-info", "conftest.py",
+]
+
+# Context Assembler Configuration
+CONTEXT_DEFAULT_MAX_CALLERS = 5
+CONTEXT_DEFAULT_MAX_CALLEES = 5
+CONTEXT_DEFAULT_CALLER_DEPTH = 1
+CONTEXT_DEFAULT_CALLEE_DEPTH = 1
+
 CONCERN_DIFFS = {
     "privacy": """Real bug example: User profile endpoint returned password_hash and salt_hex fields
 in JSON response, exposing sensitive authentication data. Fix removed these fields from public() method.""",
