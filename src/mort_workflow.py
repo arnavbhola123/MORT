@@ -12,10 +12,12 @@ from src.mutation.mutation_orchestrator import MutationOrchestrator
 from src.oracle.oracle_validator import OracleValidator
 from src.oracle.oracle_pipeline import OraclePipeline
 from src.oracle.oracle_orchestrator import OracleOrchestrator
+from src.shared.graph_client import GraphClient
 from prompts.templates import PromptTemplates
 from typing import Dict, Optional
 import threading
 import os
+import sys
 import constants
 
 
@@ -31,13 +33,16 @@ class MORTWorkflow:
         chunker_mode: str = "llm",
         mode: str = "mutation",
         concern: str = None,
+        test_type: str = "unit",
     ):
         self.repo_path = os.path.abspath(repo_path)
         self.max_workers = max_workers
         self.chunker_mode = chunker_mode.lower()
         self.mode = mode
         self.concern = concern or constants.DEFAULT_CONCERN
+        self.test_type = test_type
         self._print_lock = threading.Lock()
+        self._graph_client = None
 
         # Initialize shared dependencies
         llm = LLMClient(model, provider)
@@ -46,13 +51,26 @@ class MORTWorkflow:
         chunker = CodeChunker(mode=chunker_mode)
         repo_manager = RepoManager(repo_path, constants.TEMP_TESTING_DIR)
 
+        # Create GraphClient when functional tests are requested
+        if mode == "mutation" and test_type in ("functional", "both"):
+            neo4j_uri = os.environ.get("NEO4J_URI")
+            neo4j_user = os.environ.get("NEO4J_USER", "neo4j")
+            neo4j_pass = os.environ.get("NEO4J_PASSWORD")
+            if not neo4j_uri or not neo4j_pass:
+                print("Error: NEO4J_URI and NEO4J_PASSWORD must be set for functional test generation")
+                print("Set them in .env or as environment variables")
+                sys.exit(1)
+            self._graph_client = GraphClient(neo4j_uri, neo4j_user, neo4j_pass)
+
         # Mode-specific initialization
         if mode == "mutation":
             # Build mutation-specific module hierarchy
             stitcher = FileStitcher()
             llm_orchestrator = LLMOrchestrator(llm, prompts)
             mutation_pipeline = MutationPipeline(
-                llm_orchestrator, validator, stitcher, self._thread_safe_print
+                llm_orchestrator, validator, stitcher, self._thread_safe_print,
+                graph_client=self._graph_client,
+                test_type=test_type,
             )
             parallel_processor = ParallelProcessor(
                 mutation_pipeline, repo_manager, self._thread_safe_print
@@ -66,6 +84,7 @@ class MORTWorkflow:
                 llm.model,
                 self.chunker_mode,
                 self.concern,
+                test_type,
             )
             self.oracle_orchestrator = None
 

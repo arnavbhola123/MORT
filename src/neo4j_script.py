@@ -754,15 +754,21 @@ def upload_to_neo4j(
         for i in range(0, len(file_rows), 500):
             session.execute_write(_upsert_files, file_rows[i:i + 500])
 
-        # Create symbols and imports per file
+        # Pass 1: Create all symbols first
         python_files = [f for f in files if f.symbols or f.resolved_imports]
         for idx, fi in enumerate(python_files):
             if fi.symbols:
                 session.execute_write(_upsert_symbols, fi.rel_path, fi.symbols)
+            if (idx + 1) % 20 == 0:
+                log.info("Created symbols for %d/%d Python files...",
+                         idx + 1, len(python_files))
+
+        # Pass 2: Create all imports (all symbols now exist)
+        for idx, fi in enumerate(python_files):
             if fi.resolved_imports:
                 session.execute_write(_upsert_imports, fi.rel_path, fi.resolved_imports)
             if (idx + 1) % 20 == 0:
-                log.info("Processed symbols/imports for %d/%d Python files...",
+                log.info("Created imports for %d/%d Python files...",
                          idx + 1, len(python_files))
 
     driver.close()
