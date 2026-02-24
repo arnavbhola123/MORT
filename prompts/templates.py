@@ -263,9 +263,63 @@ For each mutant, wrap the mutated code with delimiters:
 Generate {num_mutants} distinct mutants."""
 
     @staticmethod
-    def generate_oracle_inference(original_code: str, mutants: list, concern: str) -> str:
+    def generate_oracle_inference(original_code: str, mutants: list, concern: str, integration_context: dict = None) -> str:
         """Generate oracle specification from analyzing mutants"""
         mutants_text = "\n\n".join([f"MUTANT {i+1}:\n{m}" for i, m in enumerate(mutants)])
+
+        # Format integration context from knowledge graph if available
+        integration_section = ""
+        if integration_context:
+            parts = []
+
+            if integration_context.get("entry_points"):
+                lines = []
+                seen = set()
+                for ep in integration_context["entry_points"]:
+                    key = (ep.get("direct_caller"), ep.get("direct_caller_file"))
+                    if key not in seen:
+                        seen.add(key)
+                        line = f"  - {ep.get('direct_caller')} in {ep.get('direct_caller_file')}"
+                        if ep.get("top_level_entry"):
+                            line += f" (called by {ep.get('top_level_entry')} in {ep.get('top_entry_file')})"
+                        lines.append(line)
+                parts.append("CALLERS THAT USE THIS FUNCTION:\n" + "\n".join(lines))
+
+            if integration_context.get("class_interface"):
+                ci = integration_context["class_interface"][0]
+                method_lines = []
+                for m in ci.get("public_methods", []):
+                    params = ", ".join(m.get("params", [])) if m.get("params") else ""
+                    method_lines.append(f"  - {m.get('name')}({params})")
+                parts.append(
+                    f"CLASS INTERFACE for {ci.get('class_name')}:\n"
+                    f"  Bases: {ci.get('bases', [])}\n"
+                    f"  Public methods:\n" + "\n".join(method_lines)
+                )
+
+            if integration_context.get("import_chain"):
+                ic = integration_context["import_chain"][0]
+                parts.append(
+                    f"IMPORT CHAIN:\n"
+                    f"  Target file: {ic.get('target_file')}\n"
+                    f"  Direct importers: {ic.get('direct_importers', [])}\n"
+                    f"  Second-hop importers: {ic.get('second_hop_importers', [])}"
+                )
+
+            if integration_context.get("caller_source_code"):
+                caller_parts = []
+                for path, code in integration_context["caller_source_code"].items():
+                    caller_parts.append(f"--- {path} ---\n{code}")
+                parts.append("SOURCE CODE OF CALLERS:\n" + "\n\n".join(caller_parts))
+
+            if parts:
+                integration_section = (
+                    "\nINTEGRATION CONTEXT (how this function is used across the codebase):\n"
+                    + "\n\n".join(parts)
+                    + "\n\nUse this integration context to infer CROSS-MODULE invariants — "
+                    "properties that callers depend on, contracts between this function and its consumers, "
+                    "and integration-level safety properties that would break downstream behavior.\n"
+                )
 
         return f"""I will show you code and several BUGGY mutated versions of it.
 
@@ -274,7 +328,7 @@ ORIGINAL CODE:
 
 BUGGY MUTANTS (each has a subtle bug related to {concern}):
 {mutants_text}
-
+{integration_section}
 TASK: Infer what CORRECT behavior should be by analyzing what each mutant breaks.
 
 For each mutant:
@@ -288,6 +342,7 @@ INVARIANTS: Properties that must ALWAYS hold (that mutants violate)
 SAFETY PROPERTIES: Things that must NEVER happen (that mutants cause)
 INPUT-OUTPUT RELATIONSHIPS: Correct outputs for given inputs
 ERROR CONDITIONS: How errors must be handled
+INTEGRATION CONTRACTS: Properties that callers depend on (if integration context was provided)
 
 Each specification item must be concrete enough to write an assertion for.
 
@@ -296,6 +351,9 @@ GOOD: "When input is None, the function must return 0, not raise TypeError"
 
 BAD: "Data should be secure"
 GOOD: "The response dict must never contain the key 'ssn_hash'"
+
+BAD: "Callers expect correct results"
+GOOD: "When prepare_request() calls super_len(data), the returned value must match len(data.read()) for file-like objects"
 """
 
     @staticmethod

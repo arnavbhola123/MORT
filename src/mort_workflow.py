@@ -51,16 +51,21 @@ class MORTWorkflow:
         chunker = CodeChunker(mode=chunker_mode)
         repo_manager = RepoManager(repo_path, constants.TEMP_TESTING_DIR)
 
-        # Create GraphClient when functional tests are requested
-        if mode == "mutation" and test_type in ("functional", "both"):
+        # Create GraphClient when knowledge graph is needed
+        # Required for mutation+functional tests; optional for oracle mode
+        needs_graph = (mode == "mutation" and test_type in ("functional", "both")) or mode == "oracle"
+        if needs_graph:
             neo4j_uri = os.environ.get("NEO4J_URI")
             neo4j_user = os.environ.get("NEO4J_USER", "neo4j")
             neo4j_pass = os.environ.get("NEO4J_PASSWORD")
-            if not neo4j_uri or not neo4j_pass:
+            if neo4j_uri and neo4j_pass:
+                self._graph_client = GraphClient(neo4j_uri, neo4j_user, neo4j_pass)
+            elif mode == "mutation":
                 print("Error: NEO4J_URI and NEO4J_PASSWORD must be set for functional test generation")
                 print("Set them in .env or as environment variables")
                 sys.exit(1)
-            self._graph_client = GraphClient(neo4j_uri, neo4j_user, neo4j_pass)
+            else:
+                print("Note: NEO4J_URI/NEO4J_PASSWORD not set — oracle mode will run without knowledge graph context")
 
         # Mode-specific initialization
         if mode == "mutation":
@@ -92,7 +97,10 @@ class MORTWorkflow:
             # Build oracle-specific module hierarchy
             output_dir = os.path.join(constants.ORACLE_OUTPUT_DIR, "temp")
             oracle_validator = OracleValidator(output_dir)
-            oracle_pipeline = OraclePipeline(llm, validator, prompts, oracle_validator)
+            oracle_pipeline = OraclePipeline(
+                llm, validator, prompts, oracle_validator,
+                graph_client=self._graph_client,
+            )
             self.oracle_orchestrator = OracleOrchestrator(
                 oracle_pipeline,
                 chunker,

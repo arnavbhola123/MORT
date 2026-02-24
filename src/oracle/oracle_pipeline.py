@@ -5,6 +5,7 @@ from src.shared.validators import CodeValidator
 from src.oracle.oracle_validator import OracleValidator
 from prompts.templates import PromptTemplates
 from typing import Dict, List, Optional
+import os
 import re
 
 
@@ -17,11 +18,13 @@ class OraclePipeline:
         validator: CodeValidator,
         prompts: PromptTemplates,
         oracle_validator: OracleValidator,
+        graph_client=None,
     ):
         self.llm = llm_client
         self.validator = validator
         self.prompts = prompts
         self.oracle_validator = oracle_validator
+        self.graph_client = graph_client
 
     def generate_mutants(
         self, chunk_code: str, context: str, concern: str, num_mutants: int = 10
@@ -133,7 +136,7 @@ class OraclePipeline:
         return answer.lower().startswith('yes')
 
     def generate_oracle(
-        self, chunk_code: str, mutants: List[str], concern: str
+        self, chunk_code: str, mutants: List[str], concern: str, integration_context: dict = None
     ) -> str:
         """
         Step 5: Generate oracle specification from mutants.
@@ -142,13 +145,14 @@ class OraclePipeline:
             chunk_code: Original code chunk
             mutants: List of valid mutants
             concern: Concern category
+            integration_context: Optional knowledge graph context about how this symbol is used
 
         Returns:
             Oracle specification text
         """
         print(f"\n  Step 5: Generating oracle specification...")
 
-        prompt = self.prompts.generate_oracle_inference(chunk_code, mutants, concern)
+        prompt = self.prompts.generate_oracle_inference(chunk_code, mutants, concern, integration_context)
         oracle = self.llm.invoke(prompt)
 
         print(f"    Oracle generated ({len(oracle)} chars)")
@@ -272,6 +276,7 @@ class OraclePipeline:
         test_relpath: str,
         venv_python: str,
         existing_test_file: str,
+        repo_path: str = "",
     ) -> Optional[Dict]:
         """
         Process a single chunk through the complete 8-step oracle pipeline.
@@ -311,8 +316,44 @@ class OraclePipeline:
             print("  WARNING: No valid mutants after filtering")
             return None
 
+        # Step 4b: Query knowledge graph for integration context
+        integration_context = None
+        if self.graph_client is not None:
+            print(f"\n  Step 4b: Querying knowledge graph for integration context...")
+            symbol_name = chunk_id.split(".")[-1] if "." in chunk_id else chunk_id
+            file_suffix = code_relpath
+
+            warranted = self.graph_client.check_functional_test_warranted(
+                symbol_name, file_suffix
+            )
+
+            if warranted is None:
+                print(f"    Symbol '{symbol_name}' not warranted — no importers or isolated symbol")
+            else:
+                integration_context = self.graph_client.get_integration_context(
+                    symbol_name, file_suffix
+                )
+
+                # Read caller source files from disk
+                caller_source_code = {}
+                if integration_context.get("entry_points"):
+                    seen_files = set()
+                    for ep in integration_context["entry_points"]:
+                        caller_file = ep.get("direct_caller_file")
+                        if caller_file and caller_file not in seen_files:
+                            seen_files.add(caller_file)
+                            abs_path = os.path.join(repo_path, caller_file)
+                            if os.path.isfile(abs_path):
+                                try:
+                                    with open(abs_path, "r", encoding="utf-8") as f:
+                                        caller_source_code[caller_file] = f.read()
+                                except Exception as e:
+                                    print(f"    Warning: Could not read caller file {caller_file}: {e}")
+                integration_context["caller_source_code"] = caller_source_code
+                print(f"    Integration context retrieved ({len(integration_context.get('entry_points', []))} entry points)")
+
         # Step 5: Generate oracle
-        oracle = self.generate_oracle(chunk_code, valid_mutants, concern)
+        oracle = self.generate_oracle(chunk_code, valid_mutants, concern, integration_context)
 
         # Step 6: Human validation
         validated_oracle = self.validate_oracle_with_user(oracle, chunk_id)
@@ -329,7 +370,7 @@ class OraclePipeline:
         )
 
         # Return complete results
-        return {
+        result = {
             "chunk_id": chunk_id,
             "chunk_type": chunk.get("chunk_type", "unknown"),
             "mutants_generated": len(mutants),
@@ -338,4 +379,6 @@ class OraclePipeline:
             "test_code": test_code,
             "bug_results": bug_results,
             "bugs_detected": bug_results.get("bugs_detected", None),
+            "integration_context_available": integration_context is not None,
         }
+        return result
