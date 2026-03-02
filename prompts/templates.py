@@ -224,6 +224,129 @@ Return ONLY valid JSON:
 }}
 """
 
+    @staticmethod
+    def llm_judge_functional_test(
+        original_code: str,
+        mutated_code: str,
+        original_test: str,
+        new_test: str,
+        context: str,
+        diff: str,
+        integration_context: dict,
+        concern: str = "privacy",
+    ) -> str:
+        """Prompt for LLM to judge functional test quality"""
+
+        # Format integration context for the judge
+        callers_text = ""
+        if integration_context.get("entry_points"):
+            lines = []
+            seen = set()
+            for ep in integration_context["entry_points"]:
+                key = (ep.get("direct_caller"), ep.get("direct_caller_file"))
+                if key not in seen:
+                    seen.add(key)
+                    lines.append(f"  - {ep.get('direct_caller')} in {ep.get('direct_caller_file')}")
+            callers_text = "KNOWN CALLERS:\n" + "\n".join(lines)
+
+        return f"""You are an expert security and testing reviewer evaluating an AI-generated FUNCTIONAL TEST for {concern}/business-logic concerns.
+
+{concern.upper()} CONCERN CONTEXT:
+{context}
+
+TARGET VIOLATION PATTERN:
+{diff}
+
+ORIGINAL CODE:
+```python
+{original_code}
+```
+
+MUTATED CODE (with bug):
+```python
+{mutated_code}
+```
+
+ORIGINAL TEST SUITE:
+```python
+{original_test}
+```
+
+NEW FUNCTIONAL TEST (designed to catch the mutant through a caller):
+```python
+{new_test}
+```
+
+INTEGRATION CONTEXT:
+{callers_text}
+
+---
+
+EVALUATION CRITERIA:
+
+1. CONCERN ALIGNMENT (0-10):
+   How well does the mutation represent the TARGET VIOLATION PATTERN?
+   - 0-3: Unrelated bug type or invents non-existent attributes/logic
+   - 4-6: Related domain but wrong mechanism or too heavy-handed
+   - 7-8: Closely matches pattern with minor deviations
+   - 9-10: Perfect instantiation of the violation pattern
+
+2. BUSINESS LOGIC IMPACT (0-10):
+   How significantly does this mutation affect real-world system behavior?
+   - 0-3: Cosmetic or no observable behavioral change
+   - 4-6: Changes behavior in edge cases only
+   - 7-8: Impacts common execution paths
+   - 9-10: Critical business logic flaw
+
+3. MUTATION SUBTLETY (0-10):
+   Would existing tests miss this? Is it realistic?
+   - 0-3: Invents attributes/logic not in original code, crashes immediately, or syntax error
+   - 4-6: Plausible but detectable — removes an obvious guard or changes a clear default
+   - 7-8: Subtle — weakens a validation, reorders operations, or changes error handling in a way that looks intentional
+   - 9-10: Insidious — correct behavior in most cases, only fails under specific conditions
+
+4. CALLER PATH VALIDITY (0-10):
+   Does the test exercise the mutated code through a real caller, not directly?
+   - 0-3: Test calls the mutation target function directly (defeats the purpose of a functional test)
+   - 4-6: Test calls through a caller but the caller is not from the integration context, or the call path doesn't actually reach the mutated code
+   - 7-8: Test calls through a known caller from the integration context and the path reaches the mutation
+   - 9-10: Test uses the exact caller listed in the integration context with realistic arguments that naturally exercise the mutated path
+
+5. INTEGRATION REALISM (0-10):
+   Does the test represent a realistic integration scenario?
+   - 0-3: Contrived setup, unrealistic inputs, or assertions on internal state rather than observable output
+   - 4-6: Reasonable setup but asserts on intermediate values or uses overly specific mocking
+   - 7-8: Realistic preconditions, asserts on caller-level observable output, minimal mocking
+   - 9-10: Test mirrors a real-world usage pattern — could be a genuine integration test in a production test suite
+
+---
+
+AUTOMATIC DISQUALIFIERS:
+- Mutation adds attributes/logic not in original code → mutation_subtlety=0
+- Mutation introduces syntax errors → concern_alignment=0, mutation_subtlety=0
+- Test doesn't fail on mutant → caller_path_validity=0, integration_realism=0
+- Test calls the mutation target directly (not through a caller) → caller_path_validity=0
+
+SCORING GUIDELINES:
+- Most tests should score 4-7
+- Scores of 9-10 should be RARE
+- If unsure between two scores, choose the lower one
+
+Return ONLY valid JSON:
+{{
+    "concern_alignment": <int 0-10>,
+    "concern_alignment_reasoning": "<one sentence>",
+    "business_logic_impact": <int 0-10>,
+    "business_logic_impact_reasoning": "<one sentence>",
+    "mutation_subtlety": <int 0-10>,
+    "mutation_subtlety_reasoning": "<one sentence>",
+    "caller_path_validity": <int 0-10>,
+    "caller_path_validity_reasoning": "<one sentence>",
+    "integration_realism": <int 0-10>,
+    "integration_realism_reasoning": "<one sentence>"
+}}
+"""
+
     # ===== Oracle Mode Prompts =====
 
     @staticmethod

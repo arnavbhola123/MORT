@@ -152,6 +152,62 @@ class LLMOrchestrator:
 
         return extracted
 
+    def llm_judge_functional_test(
+        self,
+        original_code: str,
+        mutated_code: str,
+        original_test: str,
+        new_test: str,
+        context: str,
+        diff: str,
+        concern: str = "privacy",
+        integration_context: dict = None,
+    ) -> Optional[Dict]:
+        """
+        LLM as judge - evaluates the quality of a generated functional test.
+
+        Returns:
+            Dictionary of scores, or None if evaluation fails
+        """
+        prompt = self.prompts.llm_judge_functional_test(
+            original_code=original_code,
+            mutated_code=mutated_code,
+            original_test=original_test,
+            new_test=new_test,
+            context=context,
+            diff=diff,
+            concern=concern,
+            integration_context=integration_context or {},
+        )
+
+        print(f"\n{'='*60}")
+        print("LLM CALL: Judge Functional Test Quality")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
+        try:
+            response = self.llm.invoke(prompt)
+
+            print(f"\nLLM Response (length: {len(response)} chars):")
+            print(f"{'-'*60}")
+            print(response[:100])
+            print(f"{'-'*60}\n")
+
+            # Extract JSON from markdown or raw response
+            json_str = self.llm.extract_json_from_response(response)
+            scores = json.loads(json_str)
+
+            print(f"Parsed functional test scores: {scores}\n")
+            return scores
+
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON from LLM functional test judge: {e}")
+            print(f"  Response was: {response}\n")
+            return None
+        except Exception as e:
+            print(f"Error in LLM functional test judge: {e}\n")
+            return None
+
     def llm_judge_mutant(
         self,
         original_code: str,

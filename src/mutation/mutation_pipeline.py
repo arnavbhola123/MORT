@@ -114,6 +114,7 @@ class MutationPipeline:
         new_test_class = None
         scores_dict = None
         functional_test = None
+        functional_scores_dict = None
         functional_test_skipped_reason = None
 
         # STEPS 5-7: Unit test generation (skip when test_type is "functional")
@@ -301,10 +302,25 @@ class MutationPipeline:
                         else:
                             self._thread_safe_print("  Functional test kills mutant!", chunk_id)
 
-        # For functional-only mode, run placeholder judge scoring
-        if self.test_type == "functional" and scores_dict is None:
-            self._thread_safe_print("STEP 7: LLM judge (placeholder for functional mode)", chunk_id)
-            scores_dict = {}
+                            # 8f: LLM judge evaluation for functional test
+                            self._thread_safe_print("  8f: LLM judge evaluation for functional test", chunk_id)
+                            functional_scores_dict = self.llm_orchestrator.llm_judge_functional_test(
+                                original_code=chunk["original_code"],
+                                mutated_code=mutated_chunk_code,
+                                original_test=existing_test_class,
+                                new_test=functional_test,
+                                context=context,
+                                diff=diff,
+                                concern=concern,
+                                integration_context=integration_context,
+                            )
+
+                            if functional_scores_dict:
+                                for score_key in functional_scores_dict.keys():
+                                    if functional_scores_dict[score_key] is not None:
+                                        self._thread_safe_print(f"  {score_key} : {functional_scores_dict[score_key]}", chunk_id)
+                                    else:
+                                        self._thread_safe_print("  score not found", chunk_id)
 
         # Determine if we have at least one valid test
         has_unit_test = new_test_class is not None
@@ -336,6 +352,7 @@ class MutationPipeline:
 
         if self.test_type in ("functional", "both"):
             result["functional_test"] = functional_test
+            result["functional_scores"] = functional_scores_dict
             if functional_test_skipped_reason:
                 result["functional_test_skipped_reason"] = functional_test_skipped_reason
 

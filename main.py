@@ -400,6 +400,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
                 "chunk_type": mutant_data["chunk_type"],
                 "files": files_dict,
                 "scores": mutant_data.get("scores", {}),
+                "functional_scores": mutant_data.get("functional_scores", {}),
             }
             if mutant_data.get("functional_test_skipped_reason"):
                 mutant_metadata["functional_test_skipped_reason"] = mutant_data[
@@ -415,7 +416,10 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
                 print(f"          Functional Test: {functional_test_filename}")
             if mutant_data.get("functional_test_skipped_reason"):
                 print(f"          Functional test skipped: {mutant_data['functional_test_skipped_reason']}")
-            print(f"          Scores: {mutant_data.get('scores', {})}")
+            if mutant_data.get("scores"):
+                print(f"          Scores: {mutant_data['scores']}")
+            if mutant_data.get("functional_scores"):
+                print(f"          Functional Scores: {mutant_data['functional_scores']}")
 
         # Save updated metadata
         metadata['total_chunks'] = result['total_chunks']
