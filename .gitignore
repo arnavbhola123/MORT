@@ -14,3 +14,4 @@ outputs/
 oracle_outputs/
 !oracle_outputs/.gitkeep
 test_data/
+node_modules/
