@@ -1,5 +1,5 @@
 # LLM Configuration
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3-flash-preview"
 MODEL_PROVIDER = "google_genai"
 
 # Output Configuration
