@@ -120,6 +120,94 @@ class LLMOrchestrator:
 
         return extracted
 
+    def make_functional_test_to_catch_fault(
+        self,
+        original_class: str,
+        mutated_class: str,
+        existing_test_class: str,
+        integration_context: dict,
+    ) -> Optional[str]:
+        """Generate a functional test that catches a fault through a realistic usage path"""
+        prompt = self.prompts.make_functional_test_to_catch_fault(
+            original_class, mutated_class, existing_test_class, integration_context
+        )
+
+        print(f"\n{'='*60}")
+        print("LLM CALL: Generate Functional Test to Kill Mutant")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
+        text = self.llm.invoke(prompt)
+
+        print(f"\nLLM Response (length: {len(text)} chars):")
+        print(f"{'-'*60}")
+        print(text[:100])
+        print(f"{'-'*60}\n")
+
+        extracted = self.llm.extract_code_from_response(text)
+        if extracted:
+            print(f"Extracted functional test code (length: {len(extracted)} chars)")
+        else:
+            print(f"Failed to extract functional test code from response")
+
+        return extracted
+
+    def llm_judge_functional_test(
+        self,
+        original_code: str,
+        mutated_code: str,
+        original_test: str,
+        new_test: str,
+        context: str,
+        diff: str,
+        concern: str = "privacy",
+        integration_context: dict = None,
+    ) -> Optional[Dict]:
+        """
+        LLM as judge - evaluates the quality of a generated functional test.
+
+        Returns:
+            Dictionary of scores, or None if evaluation fails
+        """
+        prompt = self.prompts.llm_judge_functional_test(
+            original_code=original_code,
+            mutated_code=mutated_code,
+            original_test=original_test,
+            new_test=new_test,
+            context=context,
+            diff=diff,
+            concern=concern,
+            integration_context=integration_context or {},
+        )
+
+        print(f"\n{'='*60}")
+        print("LLM CALL: Judge Functional Test Quality")
+        print(f"{'='*60}")
+        print(f"Prompt length: {len(prompt)} chars")
+
+        try:
+            response = self.llm.invoke(prompt)
+
+            print(f"\nLLM Response (length: {len(response)} chars):")
+            print(f"{'-'*60}")
+            print(response[:100])
+            print(f"{'-'*60}\n")
+
+            # Extract JSON from markdown or raw response
+            json_str = self.llm.extract_json_from_response(response)
+            scores = json.loads(json_str)
+
+            print(f"Parsed functional test scores: {scores}\n")
+            return scores
+
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON from LLM functional test judge: {e}")
+            print(f"  Response was: {response}\n")
+            return None
+        except Exception as e:
+            print(f"Error in LLM functional test judge: {e}\n")
+            return None
+
     def llm_judge_mutant(
         self,
         original_code: str,

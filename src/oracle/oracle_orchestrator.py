@@ -164,6 +164,7 @@ class OracleOrchestrator:
                 test_relpath,
                 self.repo_manager.venv_python,
                 existing_test_content,  # Pass test file content for style reference
+                repo_path=repo_path,
             )
 
             if result:
