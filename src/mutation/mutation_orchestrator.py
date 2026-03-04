@@ -24,6 +24,7 @@ class MutationOrchestrator:
         model: str,
         chunker_mode: str,
         concern: str = None,
+        test_type: str = "unit",
     ):
         self.parallel_processor = parallel_processor
         self.chunker = chunker
@@ -33,6 +34,7 @@ class MutationOrchestrator:
         self.model = model
         self.chunker_mode = chunker_mode
         self.concern = concern or constants.DEFAULT_CONCERN
+        self.test_type = test_type
 
     def run_workflow(self, code_file: str, test_file: str) -> Optional[Dict]:
         """Run the MORT workflow with chunk-based mutation"""
@@ -43,9 +45,9 @@ class MutationOrchestrator:
         print(f"Processing: {code_file}, {test_file}")
         print(f"Max parallel workers: {self.max_workers}")
 
-        # Load existing metadata for deduplication (file/concern folder structure)
+        # Load existing metadata for deduplication (file/concern/test_type folder structure)
         file_name = Path(code_file).stem
-        output_folder = os.path.join(constants.OUTPUT_DIR, file_name, self.concern)
+        output_folder = os.path.join(constants.OUTPUT_DIR, file_name, self.concern, self.test_type)
         metadata_path = os.path.join(output_folder, "metadata.json")
 
         existing_chunk_ids = set()
@@ -103,7 +105,7 @@ class MutationOrchestrator:
             return None
 
         # TODO: REMOVE LIMITATION AFTER TESTING
-        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[:1]
+        mutable_chunks = self.chunker.get_mutable_chunks(file_data)[1:2]
         print(
             f"  Found {len(file_data['chunks'])} chunks ({len(mutable_chunks)} mutable)"
         )
@@ -138,6 +140,7 @@ class MutationOrchestrator:
                     self.repo_manager.venv_python,
                     existing_chunk_ids,
                     self.concern,
+                    self.repo_manager.repo_path,
                 ): (idx, chunk)
                 for idx, chunk in enumerate(mutable_chunks)
             }

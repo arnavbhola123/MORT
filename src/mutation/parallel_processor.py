@@ -34,6 +34,7 @@ class ParallelProcessor:
         venv_python: str,
         existing_chunk_ids: Set[str],
         concern: str = "privacy",
+        repo_path: str = "",
     ) -> Optional[Dict]:
         """Process a single chunk with its index (for parallel execution)"""
         chunk_id = chunk["chunk_id"]
@@ -67,6 +68,7 @@ class ParallelProcessor:
             venv_python,
             existing_chunk_ids,
             concern,
+            repo_path,
         )
 
         if result:

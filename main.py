@@ -102,6 +102,8 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
     max_workers = MAX_WORKERS  # default
     concern = None
 
+    test_type = "unit"
+
     if mode == "mutation":
         # Ask for number of workers
         while True:
@@ -139,6 +141,21 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
                 "": "privacy",  # Allow empty input to default to privacy
             },
         )
+        # Ask for test type
+        test_type = _mort_prompt_choice(
+            "Choose test type",
+            {
+                "unit": "unit",
+                "functional": "functional",
+                "both": "both",
+                "u": "unit",
+                "f": "functional",
+                "b": "both",
+                "1": "unit",
+                "2": "functional",
+                "3": "both",
+            },
+        )
     elif mode == "oracle":
         concern = _mort_prompt_choice(
             "Choose concern",
@@ -167,6 +184,7 @@ def _mort_interactive_parse_args(self, args=None, namespace=None):
         max_workers=max_workers,
         chunker_mode=chunker_mode,
         concern=concern,
+        test_type=test_type,
     )
     return ns
 
@@ -252,6 +270,14 @@ Examples:
         help="Concern category (required for oracle mode, optional for mutation mode - defaults to privacy)",
     )
 
+    # Test type option (mutation mode only)
+    parser.add_argument(
+        "--test-type",
+        choices=["unit", "functional", "both"],
+        default="unit",
+        help="Test generation type: unit (default), functional (graph-powered), or both",
+    )
+
     return parser
 
 
@@ -281,10 +307,12 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
     """Run mutation testing workflow"""
     # Default concern to privacy if not specified
     concern = args.concern or "privacy"
+    test_type = getattr(args, "test_type", "unit")
 
     print(" MORT MUTATION TESTING WORKFLOW")
     print("-" * 80)
     print(f"Concern: {concern.upper()}")
+    print(f"Test type: {test_type.upper()}")
     print(f"Chunker mode: {args.chunker_mode.upper()}")
     print(f"Max workers: {args.max_workers}")
     print("-" * 80)
@@ -302,6 +330,7 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         chunker_mode=args.chunker_mode,
         mode="mutation",
         concern=concern,
+        test_type=test_type,
     )
     result = mort.run_workflow(code_file_abs, test_file_abs)
 
@@ -312,9 +341,9 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
         print(f"Successfully generated {result['successful_count']} new mutant(s)")
         print(f"Skipped {result.get('skipped_count', 0)} duplicate(s)")
 
-        # Create file/concern output folder structure
+        # Create file/concern/test_type output folder structure
         file_name = Path(code_file_abs).stem
-        output_folder = os.path.join(OUTPUT_DIR, file_name, concern)
+        output_folder = os.path.join(OUTPUT_DIR, file_name, concern, test_type)
         os.makedirs(output_folder, exist_ok=True)
 
         # Load existing metadata
@@ -339,34 +368,58 @@ def run_mutation_mode(args, repo_path, code_file_abs, test_file_abs):
             mutant_hash = mutant_data["hash"]
             chunk_id = mutant_data["chunk_id"].replace(".", "_")
             mutant_filename = f"mutant_{chunk_id}_{mutant_hash}.py"
-            test_filename = f"test_{chunk_id}_{mutant_hash}.py"
 
             mutant_path = os.path.join(output_folder, mutant_filename)
             with open(mutant_path, "w", encoding="utf-8") as f:
                 f.write(mutant_data["mutated_file"])
 
-            test_path = os.path.join(output_folder, test_filename)
-            with open(test_path, "w", encoding="utf-8") as f:
-                f.write(mutant_data["test"])
+            files_dict = {"mutant": mutant_filename}
+
+            # Save unit test if present
+            test_filename = None
+            if mutant_data.get("test"):
+                test_filename = f"test_{chunk_id}_{mutant_hash}.py"
+                test_path = os.path.join(output_folder, test_filename)
+                with open(test_path, "w", encoding="utf-8") as f:
+                    f.write(mutant_data["test"])
+                files_dict["test"] = test_filename
+
+            # Save functional test if present
+            functional_test_filename = None
+            if mutant_data.get("functional_test"):
+                functional_test_filename = f"functional_test_{chunk_id}_{mutant_hash}.py"
+                ft_path = os.path.join(output_folder, functional_test_filename)
+                with open(ft_path, "w", encoding="utf-8") as f:
+                    f.write(mutant_data["functional_test"])
+                files_dict["functional_test"] = functional_test_filename
 
             # Add to metadata
-            metadata["mutants"].append(
-                {
-                    "hash": mutant_hash,
-                    "chunk_id": mutant_data["chunk_id"],
-                    "chunk_type": mutant_data["chunk_type"],
-                    "files": {
-                        "mutant": mutant_filename,
-                        "test": test_filename,
-                    },
-                    "scores": mutant_data.get("scores", {}),
-                }
-            )
+            mutant_metadata = {
+                "hash": mutant_hash,
+                "chunk_id": mutant_data["chunk_id"],
+                "chunk_type": mutant_data["chunk_type"],
+                "files": files_dict,
+                "scores": mutant_data.get("scores", {}),
+                "functional_scores": mutant_data.get("functional_scores", {}),
+            }
+            if mutant_data.get("functional_test_skipped_reason"):
+                mutant_metadata["functional_test_skipped_reason"] = mutant_data[
+                    "functional_test_skipped_reason"
+                ]
+            metadata["mutants"].append(mutant_metadata)
 
             print(f"  [SAVED] {mutant_data['chunk_id']}")
             print(f"          Mutant: {mutant_filename}")
-            print(f"          Test:   {test_filename}")
-            print(f"          Scores: {mutant_data.get('scores', {})}")
+            if test_filename:
+                print(f"          Test:   {test_filename}")
+            if functional_test_filename:
+                print(f"          Functional Test: {functional_test_filename}")
+            if mutant_data.get("functional_test_skipped_reason"):
+                print(f"          Functional test skipped: {mutant_data['functional_test_skipped_reason']}")
+            if mutant_data.get("scores"):
+                print(f"          Scores: {mutant_data['scores']}")
+            if mutant_data.get("functional_scores"):
+                print(f"          Functional Scores: {mutant_data['functional_scores']}")
 
         # Save updated metadata
         metadata['total_chunks'] = result['total_chunks']
