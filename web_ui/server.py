@@ -6,6 +6,7 @@ Designed for local use only; has full access to all MORT modules.
 import concurrent.futures
 import io
 import json
+import logging
 import math
 import os
 import re
@@ -298,6 +299,76 @@ def _parse_oracle_spec_path(log_text: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+# ─── Log capture handler for Python logging ────────────────────────────────────
+class _LogCaptureHandler(logging.Handler):
+    """Routes Python logging records to a LogCapture instance."""
+
+    def __init__(self, capture: LogCapture):
+        super().__init__()
+        self._capture = capture
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record) + "\n"
+            self._capture.write(msg)
+        except Exception:
+            pass
+
+
+# ─── Background knowledge-graph builder ────────────────────────────────────────
+class KGRunner:
+    """Runs build_graph() in a daemon thread with log capture."""
+
+    def __init__(self):
+        self.log = LogCapture()
+        self.done = False
+        self.success = False
+        self.error_type: str | None = None
+        self.error_msg: str | None = None
+        self.error_tb: str | None = None
+        self._thread: threading.Thread | None = None
+
+    def start(self, repo_folder: str, neo4j_uri: str, neo4j_user: str, neo4j_pass: str):
+        self._thread = threading.Thread(
+            target=self._run,
+            kwargs=dict(
+                repo_folder=repo_folder,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_pass=neo4j_pass,
+            ),
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _run(self, repo_folder: str, neo4j_uri: str, neo4j_user: str, neo4j_pass: str):
+        from src.neo4j_script import build_graph
+
+        # Route stdout to our log capture
+        _log_thread_local.capture = self.log
+
+        # Capture logging output from neo4j_script
+        handler = _LogCaptureHandler(self.log)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        neo4j_logger = logging.getLogger("src.neo4j_script")
+        neo4j_logger.addHandler(handler)
+        neo4j_logger.setLevel(logging.INFO)
+
+        try:
+            build_graph(repo_folder, neo4j_uri, neo4j_user, neo4j_pass)
+            self.success = True
+        except Exception as exc:
+            import traceback as _tb
+            self.error_type = type(exc).__name__
+            self.error_msg = str(exc)
+            self.error_tb = _tb.format_exc()
+        finally:
+            neo4j_logger.removeHandler(handler)
+            _log_thread_local.capture = None
+            self.done = True
+
+
 # ─── Folder picker (native OS dialog) ─────────────────────────────────────────
 def pick_folder_native(title: str = "Select repository folder") -> str:
     import tkinter as tk
@@ -375,6 +446,7 @@ def abs_path(repo_folder: str, rel_posix: str) -> str:
 # ─── Session state init ───────────────────────────────────────────────────────
 def init_state():
     defaults = {
+        "page": "workflow",       # "workflow" | "knowledge_graph"
         "step_idx": 0,
         "repo_folder": None,
         "repo_files": {},
@@ -399,6 +471,17 @@ def init_state():
         "run_start": None,
         "runner": None,           # WorkflowRunner instance
         "oracle_continuing": False,  # True while waiting for thread to resume after Continue
+        # knowledge graph state
+        "kg_status": None,        # None | "running" | "success" | "error"
+        "kg_logs": "",
+        "kg_error_type": None,
+        "kg_error_msg": None,
+        "kg_error_tb": None,
+        "kg_repo_folder": None,
+        "kg_runner": None,
+        "kg_start": None,
+        "kg_elapsed": 0.0,
+        "graph_status_cache": {},  # repo_folder -> (status, label)
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
@@ -406,6 +489,7 @@ def init_state():
 
 def goto(idx: int):
     st.session_state.step_idx = max(0, min(idx, len(STEPS) - 1))
+    st.session_state.page = "workflow"
 
 
 def can_advance() -> bool:
@@ -589,6 +673,57 @@ def page_test():
         "test_dir",
         "selected_test_path",
         is_test,
+    )
+
+
+# ─── Knowledge graph status helpers ───────────────────────────────────────────
+def _get_graph_status(repo_folder: str) -> tuple[str, str]:
+    """
+    Check if a Neo4j knowledge graph exists for the given repo.
+
+    Returns (status, label):
+      - ("unconfigured", "…") — NEO4J_URI / NEO4J_PASSWORD not set
+      - ("ok",           "…") — Repo node found in graph
+      - ("missing",      "…") — Connected but no graph for this repo
+      - ("error",        "…") — Connection / query error
+    """
+    neo4j_uri = os.environ.get("NEO4J_URI")
+    neo4j_pass = os.environ.get("NEO4J_PASSWORD")
+    if not neo4j_uri or not neo4j_pass:
+        return "unconfigured", "Neo4j not configured"
+    try:
+        from neo4j import GraphDatabase
+        neo4j_user = os.environ.get("NEO4J_USER", "neo4j")
+        driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_pass))
+        repo_id = os.path.abspath(repo_folder).replace("\\", "/")
+        with driver.session() as session:
+            result = session.run(
+                "MATCH (r:Repo {id: $id}) RETURN r.name AS name",
+                id=repo_id,
+            )
+            record = result.single()
+        driver.close()
+        if record:
+            return "ok", f"Graph ready — {record['name']}"
+        return "missing", "No graph for this repo"
+    except Exception as exc:
+        return "error", f"Neo4j: {str(exc)[:80]}"
+
+
+def _show_graph_badge(repo_folder: str | None):
+    """Render a small inline graph-status indicator."""
+    if not repo_folder:
+        return
+    cache = st.session_state.graph_status_cache
+    if repo_folder not in cache:
+        cache[repo_folder] = _get_graph_status(repo_folder)
+    status, label = cache[repo_folder]
+    color = {"ok": "#16a34a", "missing": "#d97706", "unconfigured": "#64748b", "error": "#dc2626"}.get(status, "#64748b")
+    icon  = {"ok": "✅", "missing": "⚠️", "unconfigured": "ℹ️", "error": "❌"}.get(status, "ℹ️")
+    st.markdown(
+        f"<span style='font-size:0.82rem;color:{color}'>"
+        f"{icon} <strong>Knowledge Graph:</strong> {label}</span>",
+        unsafe_allow_html=True,
     )
 
 
@@ -844,6 +979,146 @@ def _show_error_state():
             st.code(logs or "(no output was captured before the error)", language=None)
 
 
+# ─── Page: Knowledge Graph ────────────────────────────────────────────────────
+def page_knowledge_graph():
+    """Full-page knowledge-graph builder."""
+    runner: KGRunner | None = st.session_state.kg_runner
+    status = st.session_state.kg_status
+
+    neo4j_uri  = os.environ.get("NEO4J_URI")
+    neo4j_pass = os.environ.get("NEO4J_PASSWORD")
+    neo4j_user = os.environ.get("NEO4J_USER", "neo4j")
+
+    # ── Live progress view ────────────────────────────────────────────────
+    if status == "running":
+        elapsed = time.time() - (st.session_state.kg_start or time.time())
+
+        if runner and runner.done:
+            st.session_state.kg_elapsed = elapsed
+            st.session_state.kg_logs = runner.log.get_text()
+            if runner.error_type is not None:
+                st.session_state.kg_status = "error"
+                st.session_state.kg_error_type = runner.error_type
+                st.session_state.kg_error_msg  = runner.error_msg
+                st.session_state.kg_error_tb   = runner.error_tb
+            else:
+                st.session_state.kg_status = "success"
+            # Invalidate cached graph status for this repo
+            st.session_state.graph_status_cache.pop(
+                st.session_state.kg_repo_folder or "", None
+            )
+            st.rerun()
+            return
+
+        st.subheader("⏳ Building knowledge graph…")
+        m1, m2 = st.columns(2)
+        m1.metric("Elapsed", f"{int(elapsed)}s")
+        m2.metric("Repository", Path(st.session_state.kg_repo_folder or "").name or "—")
+        st.progress(min(0.95, 1.0 - math.exp(-elapsed / 30)))
+        st.markdown("---")
+
+        recent = runner.log.get_recent_lines(30) if runner else ""
+        if recent:
+            st.markdown("**Progress log** *(last 30 lines)*")
+            st.code(recent, language=None)
+        else:
+            st.info("Initialising — scanning repository files…", icon="⏳")
+
+        time.sleep(1)
+        st.rerun()
+        return
+
+    # ── Static page ────────────────────────────────────────────────────────
+    st.subheader("🕸️ Knowledge Graph")
+    st.caption(
+        "Index a repository into Neo4j so MORT can use structural context "
+        "when generating functional tests."
+    )
+
+    # ── Neo4j config status / setup instructions ──────────────────────────
+    if not neo4j_uri or not neo4j_pass:
+        st.warning(
+            "**NEO4J_URI** and **NEO4J_PASSWORD** are not configured.\n\n"
+            "Add the following to your `.env` file (in the MORT root) and "
+            "**restart the server**:\n\n"
+            "```\n"
+            'NEO4J_URI="bolt://localhost:7687"\n'
+            'NEO4J_USER="neo4j"\n'
+            'NEO4J_PASSWORD="your_password_here"\n'
+            "```",
+            icon="⚠️",
+        )
+    else:
+        st.success(f"Neo4j configured — `{neo4j_uri}`", icon="✅")
+
+    st.markdown("---")
+
+    # ── Repository picker ─────────────────────────────────────────────────
+    st.markdown("**Repository to index**")
+    btn_col, info_col = st.columns([1, 3])
+    with btn_col:
+        if st.button("Browse…", key="kg_browse", use_container_width=True):
+            folder = pick_folder_native()
+            if folder:
+                st.session_state.kg_repo_folder = folder
+                st.session_state.graph_status_cache.pop(folder, None)
+                st.rerun()
+    with info_col:
+        if st.session_state.kg_repo_folder:
+            st.info(f"**{st.session_state.kg_repo_folder}**", icon="📁")
+        else:
+            st.caption("No repository selected.")
+
+    # ── Result from last run ──────────────────────────────────────────────
+    if status == "success":
+        st.success(
+            f"Knowledge graph built successfully in {st.session_state.kg_elapsed:.1f}s.",
+            icon="✅",
+        )
+        with st.expander("Build logs", expanded=False):
+            st.code(st.session_state.kg_logs or "(no output)", language=None)
+    elif status == "error":
+        st.error(
+            f"**{st.session_state.kg_error_type}:** {st.session_state.kg_error_msg}",
+            icon="❌",
+        )
+        col_tb, col_log = st.columns(2)
+        with col_tb:
+            with st.expander("Traceback", expanded=True):
+                st.code(st.session_state.kg_error_tb or "(none)", language="python")
+        with col_log:
+            with st.expander("Build logs", expanded=True):
+                st.code(st.session_state.kg_logs or "(no output)", language=None)
+
+    # ── Build button ──────────────────────────────────────────────────────
+    st.markdown("---")
+    can_build = bool(st.session_state.kg_repo_folder and neo4j_uri and neo4j_pass)
+    already_built = status in ("success", "error")
+    btn_label = "🔨  Rebuild Knowledge Graph" if already_built else "🔨  Build Knowledge Graph"
+
+    if st.button(btn_label, type="primary", disabled=not can_build, use_container_width=False):
+        kg_runner = KGRunner()
+        kg_runner.start(
+            repo_folder=st.session_state.kg_repo_folder,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_pass=neo4j_pass,
+        )
+        st.session_state.kg_runner  = kg_runner
+        st.session_state.kg_status  = "running"
+        st.session_state.kg_start   = time.time()
+        st.session_state.kg_logs    = ""
+        st.session_state.kg_error_type = None
+        st.session_state.kg_error_msg  = None
+        st.session_state.kg_error_tb   = None
+        st.rerun()
+
+    if not can_build and st.session_state.kg_repo_folder:
+        st.caption(
+            "Configure NEO4J_URI and NEO4J_PASSWORD in `.env` and restart the server to enable building."
+        )
+
+
 # ─── Page: Configure & Run ────────────────────────────────────────────────────
 def page_configure():
     # Delegate to live progress view while running
@@ -860,7 +1135,11 @@ def page_configure():
             st.markdown(f"**Code file:**  `{st.session_state.selected_code_path}`")
         with c2:
             st.markdown(f"**Test file:** `{st.session_state.selected_test_path}`")
-        st.caption(f"Repository: `{st.session_state.repo_folder}`")
+        repo_col, badge_col = st.columns([3, 2])
+        with repo_col:
+            st.caption(f"Repository: `{st.session_state.repo_folder}`")
+        with badge_col:
+            _show_graph_badge(st.session_state.repo_folder)
 
     st.markdown("&nbsp;", unsafe_allow_html=True)
 
@@ -1328,6 +1607,17 @@ def render_sidebar():
         st.markdown("Mutation-Guided Oracle Refinement Testing")
         st.divider()
 
+        # ── Top-level page navigation ──────────────────────────────────────
+        on_kg = st.session_state.page == "knowledge_graph"
+        st.button(
+            "🕸️ Knowledge Graph",
+            key="nav_kg",
+            use_container_width=True,
+            type="primary" if on_kg else "secondary",
+            on_click=lambda: st.session_state.update(page="knowledge_graph"),
+        )
+        st.divider()
+
         st.markdown("### Steps")
         for i, step in enumerate(STEPS):
             is_locked = (
@@ -1422,6 +1712,12 @@ def main():
     st.markdown(_CSS, unsafe_allow_html=True)
     init_state()
     render_sidebar()
+
+    # ── Top-level routing ─────────────────────────────────────────────────
+    if st.session_state.page == "knowledge_graph":
+        page_knowledge_graph()
+        return
+
     render_stepper()
 
     key = STEPS[st.session_state.step_idx].key
