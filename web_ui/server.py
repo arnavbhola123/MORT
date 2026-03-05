@@ -402,9 +402,34 @@ print(folder or "")
             timeout=300,
         )
         out = (result.stdout or "").strip()
-        return out
+        if out:
+            return out
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        return ""
+        pass
+
+    if sys.platform == "darwin":
+        escaped_title = title.replace('"', '\\"')
+        applescript = [
+            "osascript",
+            "-e",
+            f'set chosenFolder to choose folder with prompt "{escaped_title}"',
+            "-e",
+            "POSIX path of chosenFolder",
+        ]
+        try:
+            result = subprocess.run(
+                applescript,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            out = (result.stdout or "").strip()
+            if out:
+                return out
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+
+    return ""
 
 
 # ─── Repository / tree helpers ────────────────────────────────────────────────
@@ -468,12 +493,33 @@ def abs_path(repo_folder: str, rel_posix: str) -> str:
     return os.path.normpath(os.path.join(repo_folder, rel_posix.replace("/", os.sep)))
 
 
+def normalize_existing_dir(folder: str) -> str:
+    cleaned = (folder or "").strip().strip("'").strip('"')
+    if not cleaned:
+        return ""
+    expanded = os.path.expandvars(os.path.expanduser(cleaned))
+    absolute = os.path.abspath(expanded)
+    return absolute if os.path.isdir(absolute) else ""
+
+
+def set_repo_folder(folder: str):
+    st.session_state.repo_folder = folder
+    files = read_repo_from_disk(folder)
+    st.session_state.repo_files = files
+    st.session_state.repo_tree = build_tree(list(files.keys()))
+    st.session_state.code_dir = PurePosixPath(".")
+    st.session_state.test_dir = PurePosixPath(".")
+    st.session_state.selected_code_path = None
+    st.session_state.selected_test_path = None
+
+
 # ─── Session state init ───────────────────────────────────────────────────────
 def init_state():
     defaults = {
         "page": "workflow",       # "workflow" | "knowledge_graph"
         "step_idx": 0,
         "repo_folder": None,
+        "repo_folder_input": "",
         "repo_files": {},
         "repo_tree": {},
         "code_dir": PurePosixPath("."),
@@ -503,6 +549,7 @@ def init_state():
         "kg_error_msg": None,
         "kg_error_tb": None,
         "kg_repo_folder": None,
+        "kg_repo_folder_input": "",
         "kg_runner": None,
         "kg_start": None,
         "kg_elapsed": 0.0,
@@ -563,21 +610,41 @@ def page_repo():
     btn_col, info_col = st.columns([1, 3])
     with btn_col:
         if st.button("Browse…", type="primary", use_container_width=True):
-            folder = pick_folder_native()
+            folder = normalize_existing_dir(pick_folder_native())
             if folder:
                 with st.spinner("Indexing repository…"):
-                    st.session_state.repo_folder = folder
-                    files = read_repo_from_disk(folder)
-                    st.session_state.repo_files = files
-                    st.session_state.repo_tree = build_tree(list(files.keys()))
-                    st.session_state.code_dir = PurePosixPath(".")
-                    st.session_state.test_dir = PurePosixPath(".")
-                    st.session_state.selected_code_path = None
-                    st.session_state.selected_test_path = None
+                    set_repo_folder(folder)
+                st.session_state.repo_folder_input = folder
+                st.rerun()
+            else:
+                st.warning(
+                    "Could not open the native picker. Paste a path below and click **Use path**.",
+                    icon="ℹ️",
+                )
 
     with info_col:
         if st.session_state.repo_folder:
             st.info(f"**{st.session_state.repo_folder}**", icon="📁")
+
+    input_col, use_col = st.columns([5, 1])
+    with input_col:
+        st.text_input(
+            "Or paste repository path",
+            key="repo_folder_input",
+            placeholder="~/projects/my-repo",
+            label_visibility="collapsed",
+        )
+    with use_col:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        if st.button("Use path", key="repo_use_path", use_container_width=True):
+            folder = normalize_existing_dir(st.session_state.repo_folder_input)
+            if folder:
+                with st.spinner("Indexing repository…"):
+                    set_repo_folder(folder)
+                st.session_state.repo_folder_input = folder
+                st.rerun()
+            else:
+                st.error("Path does not exist or is not a folder.")
 
     if st.session_state.repo_files:
         st.metric("Files indexed", len(st.session_state.repo_files))
@@ -1083,16 +1150,42 @@ def page_knowledge_graph():
     btn_col, info_col = st.columns([1, 3])
     with btn_col:
         if st.button("Browse…", key="kg_browse", use_container_width=True):
-            folder = pick_folder_native()
+            folder = normalize_existing_dir(pick_folder_native())
             if folder:
                 st.session_state.kg_repo_folder = folder
+                st.session_state.kg_repo_folder_input = folder
                 st.session_state.graph_status_cache.pop(folder, None)
                 st.rerun()
+            else:
+                st.warning(
+                    "Could not open the native picker. Paste a path below and click **Use path**.",
+                    icon="ℹ️",
+                )
     with info_col:
         if st.session_state.kg_repo_folder:
             st.info(f"**{st.session_state.kg_repo_folder}**", icon="📁")
         else:
             st.caption("No repository selected.")
+
+    input_col, use_col = st.columns([5, 1])
+    with input_col:
+        st.text_input(
+            "Or paste repository path",
+            key="kg_repo_folder_input",
+            placeholder="~/projects/my-repo",
+            label_visibility="collapsed",
+        )
+    with use_col:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        if st.button("Use path", key="kg_repo_use_path", use_container_width=True):
+            folder = normalize_existing_dir(st.session_state.kg_repo_folder_input)
+            if folder:
+                st.session_state.kg_repo_folder = folder
+                st.session_state.kg_repo_folder_input = folder
+                st.session_state.graph_status_cache.pop(folder, None)
+                st.rerun()
+            else:
+                st.error("Path does not exist or is not a folder.")
 
     # ── Result from last run ──────────────────────────────────────────────
     if status == "success":
