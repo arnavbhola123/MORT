@@ -371,15 +371,40 @@ class KGRunner:
 
 # ─── Folder picker (native OS dialog) ─────────────────────────────────────────
 def pick_folder_native(title: str = "Select repository folder") -> str:
-    import tkinter as tk
-    from tkinter import filedialog
+    """Open a native folder picker. On macOS, the dialog runs in a subprocess so
+    it executes on the main thread (required by AppKit). On Windows/Linux we
+    use the same subprocess approach for consistency and to avoid thread issues
+    in Streamlit callbacks.
+    """
+    import subprocess
+    import sys
 
-    root = tk.Tk()
-    root.withdraw()
-    root.wm_attributes("-topmost", 1)
-    folder = filedialog.askdirectory(title=title)
-    root.destroy()
-    return folder or ""
+    script = """
+import os
+import tkinter as tk
+from tkinter import filedialog
+title = os.environ.get("MORT_FOLDER_DIALOG_TITLE", "Select repository folder")
+root = tk.Tk()
+root.withdraw()
+root.wm_attributes("-topmost", 1)
+folder = filedialog.askdirectory(title=title)
+root.destroy()
+print(folder or "")
+"""
+    env = os.environ.copy()
+    env["MORT_FOLDER_DIALOG_TITLE"] = title
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+        )
+        out = (result.stdout or "").strip()
+        return out
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return ""
 
 
 # ─── Repository / tree helpers ────────────────────────────────────────────────
