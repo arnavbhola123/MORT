@@ -371,65 +371,103 @@ class KGRunner:
 
 # ─── Folder picker (native OS dialog) ─────────────────────────────────────────
 def pick_folder_native(title: str = "Select repository folder") -> str:
-    """Open a native folder picker. On macOS, the dialog runs in a subprocess so
-    it executes on the main thread (required by AppKit). On Windows/Linux we
-    use the same subprocess approach for consistency and to avoid thread issues
-    in Streamlit callbacks.
+    """Open a native folder picker.
+
+    On macOS, AppleScript (osascript) is tried first — it is always available,
+    runs on the correct thread, and has a native Finder look-and-feel.
+    On all platforms a tkinter subprocess is used as a fallback.
+
+    Returns the chosen absolute path, or '' if the user cancelled / no picker
+    is available.
     """
     import subprocess
     import sys
 
-    script = """
-import os
-import tkinter as tk
-from tkinter import filedialog
-title = os.environ.get("MORT_FOLDER_DIALOG_TITLE", "Select repository folder")
-root = tk.Tk()
-root.withdraw()
-root.wm_attributes("-topmost", 1)
-folder = filedialog.askdirectory(title=title)
-root.destroy()
-print(folder or "")
-"""
-    env = os.environ.copy()
-    env["MORT_FOLDER_DIALOG_TITLE"] = title
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=300,
-        )
-        out = (result.stdout or "").strip()
-        if out:
-            return out
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        pass
+    def _try_tkinter(dialog_title: str) -> str | None:
+        """Run a tkinter folder-picker in a subprocess.
 
-    if sys.platform == "darwin":
-        escaped_title = title.replace('"', '\\"')
-        applescript = [
-            "osascript",
-            "-e",
-            f'set chosenFolder to choose folder with prompt "{escaped_title}"',
-            "-e",
-            "POSIX path of chosenFolder",
-        ]
+        Returns the chosen path on success, '' if the user cancelled
+        (subprocess exited cleanly with no output), or None if the
+        subprocess itself crashed (e.g. tkinter not installed).
+        """
+        script = (
+            "import os\n"
+            "import tkinter as tk\n"
+            "from tkinter import filedialog\n"
+            "title = os.environ.get('MORT_FOLDER_DIALOG_TITLE', 'Select folder')\n"
+            "root = tk.Tk()\n"
+            "try:\n"
+            "    root.wm_attributes('-topmost', 1)\n"
+            "except Exception:\n"
+            "    pass\n"
+            "root.withdraw()\n"
+            "folder = filedialog.askdirectory(title=title)\n"
+            "try:\n"
+            "    root.destroy()\n"
+            "except Exception:\n"
+            "    pass\n"
+            "print(folder or '')\n"
+        )
+        env = os.environ.copy()
+        env["MORT_FOLDER_DIALOG_TITLE"] = dialog_title
         try:
             result = subprocess.run(
-                applescript,
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=300,
+            )
+            if result.returncode == 0:
+                # Clean exit: empty stdout means user cancelled (not a crash)
+                return (result.stdout or "").strip()
+            # Non-zero exit: subprocess crashed (missing tkinter, TclError, …)
+            return None
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            return None
+
+    def _try_osascript(dialog_title: str) -> str | None:
+        """Show a Finder folder-picker via AppleScript.
+
+        Returns the POSIX path on success, '' if the user cancelled,
+        or None if osascript itself is unavailable.
+        """
+        escaped = dialog_title.replace('"', '\\"')
+        try:
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'set chosenFolder to choose folder with prompt "{escaped}"',
+                    "-e",
+                    "POSIX path of chosenFolder",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=300,
             )
-            out = (result.stdout or "").strip()
-            if out:
-                return out
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-            pass
+            # returncode 0  → folder chosen; stdout contains the POSIX path
+            # returncode 1  → user cancelled (AppleScript error -128); stdout empty
+            # Either way, returning stdout gives the right answer.
+            return (result.stdout or "").strip()
+        except FileNotFoundError:
+            # osascript not found (non-macOS system or unusual setup)
+            return None
+        except (subprocess.TimeoutExpired, Exception):
+            return None
 
-    return ""
+    # ── macOS: prefer AppleScript (no tkinter dependency, always reliable) ──
+    if sys.platform == "darwin":
+        out = _try_osascript(title)
+        if out is not None:
+            return out
+        # osascript unavailable — fall back to tkinter subprocess
+        out = _try_tkinter(title)
+        return out if out is not None else ""
+
+    # ── Windows / Linux: use tkinter subprocess ──────────────────────────────
+    out = _try_tkinter(title)
+    return out if out is not None else ""
 
 
 # ─── Repository / tree helpers ────────────────────────────────────────────────
