@@ -245,19 +245,20 @@ class WorkflowRunner:
         test_abs: str,
         model: str,
         provider: str,
+        test_type: str = "unit",
     ):
         self._thread = threading.Thread(
             target=self._run,
             kwargs=dict(
                 repo=repo, mode=mode, chunk=chunk, workers=workers,
                 concern=concern, code_abs=code_abs, test_abs=test_abs,
-                model=model, provider=provider,
+                model=model, provider=provider, test_type=test_type,
             ),
             daemon=True,
         )
         self._thread.start()
 
-    def _run(self, repo, mode, chunk, workers, concern, code_abs, test_abs, model, provider):
+    def _run(self, repo, mode, chunk, workers, concern, code_abs, test_abs, model, provider, test_type="unit"):
         import builtins
         from src.mort_workflow import MORTWorkflow
 
@@ -277,6 +278,7 @@ class WorkflowRunner:
                 chunker_mode=chunk,
                 mode=mode,
                 concern=concern,
+                test_type=test_type,
             )
             if mode == "mutation":
                 self.result = mort.run_workflow(code_abs, test_abs)
@@ -569,6 +571,7 @@ def init_state():
         "chunk_strategy": "AST",
         "workers": MAX_WORKERS,
         "concern": "Privacy",
+        "test_type": "unit",
         # run state
         "run_status": None,       # None | "running" | "complete" | "error"
         "run_result": None,
@@ -1021,6 +1024,7 @@ def _launch_workflow():
         test_abs=abs_path(st.session_state.repo_folder, st.session_state.selected_test_path),
         model=os.getenv("MODEL", MODEL),
         provider=os.getenv("MODEL_PROVIDER", MODEL_PROVIDER),
+        test_type=st.session_state.get("test_type", "unit"),
     )
     st.session_state.runner = runner
     st.session_state.run_status = "running"
@@ -1324,6 +1328,17 @@ def page_configure():
             st.session_state.chunk_strategy = chunk
 
         if st.session_state.workflow_mode == "mutation":
+            st.markdown("**Test type**")
+            test_type = st.segmented_control(
+                "Test type",
+                options=["unit", "functional", "both"],
+                format_func=lambda x: x.capitalize(),
+                default=st.session_state.test_type,
+                label_visibility="collapsed",
+            )
+            if test_type:
+                st.session_state.test_type = test_type
+
             st.markdown("**Parallel workers**")
             workers_val = st.number_input(
                 "Workers",
@@ -1351,6 +1366,19 @@ def page_configure():
             st.caption(f"↳ {CONCERN_DESCS[st.session_state.concern]}")
 
     st.markdown("---")
+
+    # ── Neo4j warning for functional test types ────────────────────────────
+    if (
+        st.session_state.workflow_mode == "mutation"
+        and st.session_state.get("test_type", "unit") in ("functional", "both")
+        and not (os.environ.get("NEO4J_URI") and os.environ.get("NEO4J_PASSWORD"))
+    ):
+        st.warning(
+            "**Functional tests require a Neo4j knowledge graph.** "
+            "Set `NEO4J_URI` and `NEO4J_PASSWORD` in your `.env` file and restart the server, "
+            "then build the graph via the **Knowledge Graph** page before running.",
+            icon="⚠️",
+        )
 
     # ── Run / Clear buttons ────────────────────────────────────────────────
     already_ran = st.session_state.run_status in ("complete", "error")

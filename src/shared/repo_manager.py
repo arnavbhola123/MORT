@@ -52,10 +52,22 @@ class RepoManager:
         master_dir_name = f"{self.repo_name}_master_{repo_hash}"
         master_dir_path = os.path.join(self.temp_base_dir, master_dir_name)
 
-        print(f"Creating master copy of repository...")
-
         # Create temp base directory if it doesn't exist
         os.makedirs(self.temp_base_dir, exist_ok=True)
+
+        # If the master copy already exists with a working venv, reuse it
+        if os.path.exists(master_dir_path):
+            venv_python = self._get_venv_python(master_dir_path)
+            if venv_python != "python" and os.path.exists(venv_python):
+                print(f"Reusing existing master copy (already prepared)...")
+                self.master_copy_path = master_dir_path
+                self.venv_python = venv_python
+                return master_dir_path
+            # Exists but venv is missing or broken — delete and recreate
+            print(f"Existing master copy has no valid venv, recreating...")
+            shutil.rmtree(master_dir_path, ignore_errors=True)
+
+        print(f"Creating master copy of repository...")
 
         try:
             # Copy entire repository excluding specified patterns
@@ -73,7 +85,7 @@ class RepoManager:
         except Exception:
             # Clean up on failure
             if os.path.exists(master_dir_path):
-                shutil.rmtree(master_dir_path)
+                shutil.rmtree(master_dir_path, ignore_errors=True)
             raise
 
     def _setup_venv(self, repo_copy_path: str) -> None:
