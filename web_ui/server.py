@@ -1430,10 +1430,10 @@ def _render_results():
         _render_oracle(result, concern, repo)
 
 
-def _save_mutation_results(result: dict, concern: str, code_file_abs: str) -> tuple:
+def _save_mutation_results(result: dict, concern: str, code_file_abs: str, test_type: str = "unit") -> tuple:
     """Persist mutants to disk (mirrors main.py logic). Returns (output_folder, metadata)."""
     file_name = Path(code_file_abs).stem
-    out_dir = os.path.join(_MORT_ROOT, OUTPUT_DIR, file_name, concern)
+    out_dir = os.path.join(_MORT_ROOT, OUTPUT_DIR, file_name, concern, test_type)
     os.makedirs(out_dir, exist_ok=True)
 
     meta_path = os.path.join(out_dir, "metadata.json")
@@ -1453,12 +1453,23 @@ def _save_mutation_results(result: dict, concern: str, code_file_abs: str) -> tu
         h = m["hash"]
         cid = m["chunk_id"].replace(".", "_")
         mf_name = f"mutant_{cid}_{h}.py"
-        tf_name = f"test_{cid}_{h}.py"
 
         with open(os.path.join(out_dir, mf_name), "w", encoding="utf-8") as f:
             f.write(m["mutated_file"])
-        with open(os.path.join(out_dir, tf_name), "w", encoding="utf-8") as f:
-            f.write(m["test"])
+
+        files_dict = {"mutant": mf_name}
+
+        if m.get("test"):
+            tf_name = f"test_{cid}_{h}.py"
+            with open(os.path.join(out_dir, tf_name), "w", encoding="utf-8") as f:
+                f.write(m["test"])
+            files_dict["test"] = tf_name
+
+        if m.get("functional_test"):
+            ftf_name = f"functional_test_{cid}_{h}.py"
+            with open(os.path.join(out_dir, ftf_name), "w", encoding="utf-8") as f:
+                f.write(m["functional_test"])
+            files_dict["functional_test"] = ftf_name
 
         if h not in existing_hashes:
             meta["mutants"].append(
@@ -1466,8 +1477,9 @@ def _save_mutation_results(result: dict, concern: str, code_file_abs: str) -> tu
                     "hash": h,
                     "chunk_id": m["chunk_id"],
                     "chunk_type": m["chunk_type"],
-                    "files": {"mutant": mf_name, "test": tf_name},
+                    "files": files_dict,
                     "scores": m.get("scores", {}),
+                    "functional_scores": m.get("functional_scores", {}),
                 }
             )
             existing_hashes.add(h)
@@ -1627,8 +1639,9 @@ def _render_no_mutants(result: dict, out_dir: str):
 def _render_mutant_card(m: dict, idx: int):
     chunk_id = m.get("chunk_id", "unknown")
     chunk_type = m.get("chunk_type", "")
-    mutated_code = m.get("mutated_file", "")
-    test_code = m.get("test", "")
+    mutated_code = m.get("mutated_file") or ""
+    test_code = m.get("test") or ""
+    functional_test_code = m.get("functional_test") or ""
     scores = m.get("scores", {})
 
     description = _extract_mutation_description(mutated_code)
@@ -1647,8 +1660,8 @@ def _render_mutant_card(m: dict, idx: int):
                 unsafe_allow_html=True,
             )
         with head_r:
-            dl1, dl2 = st.columns(2)
-            with dl1:
+            dl_cols = st.columns(2 if not functional_test_code else 3)
+            with dl_cols[0]:
                 st.download_button(
                     "⬇ Mutant",
                     data=mutated_code,
@@ -1657,15 +1670,26 @@ def _render_mutant_card(m: dict, idx: int):
                     key=f"dl_mutant_{idx}",
                     use_container_width=True,
                 )
-            with dl2:
-                st.download_button(
-                    "⬇ Test",
-                    data=test_code,
-                    file_name=f"test_{chunk_id.replace('.', '_')}_{m['hash']}.py",
-                    mime="text/x-python",
-                    key=f"dl_test_{idx}",
-                    use_container_width=True,
-                )
+            if test_code:
+                with dl_cols[1]:
+                    st.download_button(
+                        "⬇ Kill test",
+                        data=test_code,
+                        file_name=f"test_{chunk_id.replace('.', '_')}_{m['hash']}.py",
+                        mime="text/x-python",
+                        key=f"dl_test_{idx}",
+                        use_container_width=True,
+                    )
+            if functional_test_code:
+                with dl_cols[-1]:
+                    st.download_button(
+                        "⬇ Functional test",
+                        data=functional_test_code,
+                        file_name=f"functional_test_{chunk_id.replace('.', '_')}_{m['hash']}.py",
+                        mime="text/x-python",
+                        key=f"dl_func_{idx}",
+                        use_container_width=True,
+                    )
 
         st.markdown("---")
 
@@ -1685,17 +1709,30 @@ def _render_mutant_card(m: dict, idx: int):
             st.code(snippet, language="python")
 
         # ── Full code in tabs ──────────────────────────────────────────────
-        tab_mut, tab_test = st.tabs(["Full mutated file", "Kill test"])
-        with tab_mut:
+        tab_labels = ["Full mutated file"]
+        if test_code:
+            tab_labels.append("Kill test")
+        if functional_test_code:
+            tab_labels.append("Functional test")
+
+        tabs = st.tabs(tab_labels)
+        tab_idx = 0
+        with tabs[tab_idx]:
             st.code(mutated_code, language="python")
-        with tab_test:
-            st.code(test_code, language="python")
+        tab_idx += 1
+        if test_code:
+            with tabs[tab_idx]:
+                st.code(test_code, language="python")
+            tab_idx += 1
+        if functional_test_code:
+            with tabs[tab_idx]:
+                st.code(functional_test_code, language="python")
 
 
 # ─── Main mutation result view ─────────────────────────────────────────────────
 def _render_mutation(result: dict, concern: str, repo: str):
     code_abs = abs_path(repo, st.session_state.selected_code_path)
-    out_dir, meta = _save_mutation_results(result, concern, code_abs)
+    out_dir, meta = _save_mutation_results(result, concern, code_abs, st.session_state.get("test_type", "unit"))
 
     mutants = result.get("mutants", [])
     count = len(mutants)
